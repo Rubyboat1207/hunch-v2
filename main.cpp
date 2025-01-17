@@ -1,4 +1,6 @@
 #include <iostream>
+#include <cstdint>
+#include <cstring>
 #include "sockpp/tcp_connector.h"
 
 static int PORT = 5000;
@@ -7,34 +9,35 @@ static int PORT = 5000;
 using namespace std::chrono;
 
 struct HunchPacket {
-	uint16_t version;
-	float x, y, u, v;
-	uint64_t flags;
-	char message[1024];
+    uint16_t version;
+    float x, y, u, v;
+    uint64_t flags;
+    char message[1024];
 
-	static HunchPacket decode(char* data) {
-		auto ver = (uint16_t*) data;
-		auto x = (float*) data + sizeof(uint16_t);
-		auto y = (float*) data + sizeof(uint16_t) + sizeof(float) * 1;
-		auto u = (float*) data + sizeof(uint16_t) + sizeof(float) * 2;
-		auto v = (float*) data + sizeof(uint16_t) + sizeof(float) * 3;
-		auto flags = (uint64_t*) data + sizeof(uint16_t) + sizeof(float) * 4;	
-		auto message = data + sizeof(uint16_t) + sizeof(float) * 4 + sizeof(uint64_t);
+    static HunchPacket decode(const char* data) {
+        HunchPacket packet;
 
+        // Read version
+        packet.version = *reinterpret_cast<const uint16_t*>(data);
 
-		auto packet = HunchPacket { 
-			.version = *ver, 
-			.x = *x, 
-			.y = *y,
-			.u = *u,
-			.v = *v,
-			.flags = *flags
-		};
+        // Read x, y, u, v
+        packet.x = *reinterpret_cast<const float*>(data + sizeof(uint16_t));
+        packet.y = *reinterpret_cast<const float*>(data + sizeof(uint16_t) + sizeof(float) * 1);
+        packet.u = *reinterpret_cast<const float*>(data + sizeof(uint16_t) + sizeof(float) * 2);
+        packet.v = *reinterpret_cast<const float*>(data + sizeof(uint16_t) + sizeof(float) * 3);
 
-		strcpy(packet.message, message);
+        // Read flags
+        packet.flags = *reinterpret_cast<const uint64_t*>(data + sizeof(uint16_t) + sizeof(float) * 4);
 
-		return packet;
-	}
+        // Read message
+        const char* messageStart = data + sizeof(uint16_t) + sizeof(float) * 4 + sizeof(uint64_t);
+        std::strncpy(packet.message, messageStart, sizeof(packet.message) - 1);
+
+        // Ensure null termination
+        packet.message[sizeof(packet.message) - 1] = '\0';
+
+        return packet;
+    }
 };
 
 static char* incoming_tcp_data;
