@@ -42,8 +42,9 @@ struct HunchPacket {
 
 static char* incoming_tcp_data;
 
-bool update_tcp(sockpp::tcp_connector conn) {
-	auto res = conn.read_n(incoming_tcp_data, sizeof(HunchPacket));
+bool update_tcp(sockpp::tcp_connector* conn) {
+	std::cout << "reading..." << std::endl;
+	auto res = conn->read_n(incoming_tcp_data, sizeof(HunchPacket));
 
 
 	if(!res) {
@@ -73,6 +74,12 @@ int main() {
 	conn.read_timeout(5s);
 
 	while(true) {
-		update_tcp(conn);
+		bool has_res = update_tcp(&conn);
+
+		if(has_res) {
+			std::cout << "PACKET YAY!!!" << std::endl;
+		}else {
+			std::cout << "None packet, left beef" << std::endl;
+		}
 	}
 }
