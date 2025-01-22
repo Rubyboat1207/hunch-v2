@@ -26,10 +26,9 @@ float mapValue(float value, float inputMin, float inputMax, float outputMin, flo
     return outputMin + scaledValue * (outputMax - outputMin);
 }
 
-static uint8_t* incoming_tcp_data;
+static uint8_t incoming_tcp_data[sizeof(HunchPacket)];
 
 std::optional<HunchPacket> update_tcp(sockpp::tcp_connector* conn) {
-	incoming_tcp_data = nullptr;
 	std::cout << "reading..." << std::endl;
 	auto res = conn->read_n(incoming_tcp_data, sizeof(HunchPacket));
 

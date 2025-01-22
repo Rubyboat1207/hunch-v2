@@ -18,7 +18,7 @@ HunchPacket HunchPacket::decode(const uint8_t* data) {
 		packet.flags = *reinterpret_cast<const uint64_t*>(data + sizeof(uint16_t) + sizeof(float) * 4);
 
 		// Read message
-		const char* messageStart = data + sizeof(uint16_t) + sizeof(float) * 4 + sizeof(uint64_t);
+		const char* messageStart = reinterpret_cast<const char*>(data + sizeof(uint16_t) + sizeof(float) * 4 + sizeof(uint64_t));
 		std::strncpy(packet.message, messageStart, sizeof(packet.message) - 1);
 
 		// Ensure null termination
