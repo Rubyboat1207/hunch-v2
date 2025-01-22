@@ -10,7 +10,7 @@
 #include "packet.h"
 
 static int PORT = 5000;
-#define HOST "10.9.11.159"
+#define HOST "10.9.11.26"
 
 using namespace std::chrono;
 
@@ -48,6 +48,7 @@ void on_take_picture(sockpp::tcp_connector* conn);
 
 int main() {
 	std::cout << "expecting " << sizeof(HunchPacket) << " bytes.";
+  std::cout << cv::getBuildInformation() << std::endl;
 
 	sockpp::initialize();
 	sockpp::tcp_connector conn;
@@ -81,54 +82,28 @@ int main() {
 	}
 }
 
-void on_take_picture(sockpp::tcp_connector* conn) {
-    // GStreamer pipeline for libcamera
-    std::string pipeline = "libcamera-vid --width 640 --height 480 --framerate 30 --output - | decodebin ! videoconvert ! appsink";
+void on_take_picture(sockpp::tcp_connector* conn)
+{
+    cv::VideoCapture cap(
+        "libcamerasrc ! video/x-raw,width=640,height=480,framerate=30/1,format=BGR ! "
+        "videoconvert ! appsink",
+        cv::CAP_GSTREAMER
+    );
 
-    // Open the camera using the GStreamer pipeline
-    cv::VideoCapture cap(pipeline, cv::CAP_GSTREAMER);
+    cv::Mat frame;
+    cap >> frame;
 
-    if (!cap.isOpened()) {
-        std::cerr << "Camera Failed To Open" << std::endl;
-        exit(1);
-    }
+    std::vector<uchar> jpgBuffer;
+    cv::imencode(".jpg", frame, jpgBuffer);
 
-    cv::Mat img;
-    cap >> img; // Capture a single frame
+    HunchPacket packet;
+    packet.flags = SEND_PICTURE;
+    packet.x = static_cast<int>(jpgBuffer.size());
 
-    if (img.empty()) {
-        std::cerr << "Failed to capture an image from the camera" << std::endl;
-        return;
-    }
-
-    std::vector<uchar> jpg;
-    bool success = cv::imencode(".jpg", img, jpg);
-
-    if (!success) {
-        std::cerr << "Failed to encode the image as JPEG" << std::endl;
-        return;
-    }
-
-    // Create and populate the packet
-    HunchPacket* packet = new HunchPacket();
-    packet->flags = SEND_PICTURE;
-    packet->x = jpg.size();
-
-    // Ensure the size of the image is manageable
-    if (jpg.size() > 8388608) { // 8MB limit
-        std::cerr << "Image is too large to fit inside a float" << std::endl;
-        delete packet; // Clean up memory
-        return;
-    }
-
-    // Send the packet and the image data
-    if (success) {
-        conn->write_n(reinterpret_cast<void*>(packet), sizeof(HunchPacket));
-        conn->write_n(reinterpret_cast<void*>(jpg.data()), jpg.size());
-    }
-
-    delete packet; // Clean up memory
+    conn->write_n(reinterpret_cast<void*>(&packet), sizeof(packet));
+    conn->write_n(jpgBuffer.data(), jpgBuffer.size());
 }
+
 
 void run_motors(HunchPacket* packet) {
 	float left_motor = mapValue(packet->x, -1, 1, -255, 255);
