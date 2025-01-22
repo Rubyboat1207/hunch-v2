@@ -26,16 +26,18 @@ float mapValue(float value, float inputMin, float inputMax, float outputMin, flo
     return outputMin + scaledValue * (outputMax - outputMin);
 }
 
-static char* incoming_tcp_data;
+static uint8_t* incoming_tcp_data;
 
 std::optional<HunchPacket> update_tcp(sockpp::tcp_connector* conn) {
+	incoming_tcp_data = nullptr;
 	std::cout << "reading..." << std::endl;
 	auto res = conn->read_n(incoming_tcp_data, sizeof(HunchPacket));
 
-
 	if(!res) {
+		std::cout << "res returned null" << std::endl;
 		return std::nullopt;
 	}
+	
 
 	auto packet = HunchPacket::decode(incoming_tcp_data);
 
@@ -68,13 +70,15 @@ int main() {
 			auto packet = res.value();
 
 			if((packet.flags & SEND_PICTURE) == SEND_PICTURE) {
+				std::cout << "Taking Picture!" << std::endl;
 				on_take_picture(&conn);
+				return 0;
 			}
 		}else {
 			std::cout << "None packet, left beef" << std::endl;
 		}
 
-
+		return 0;
 	}
 }
 
@@ -97,6 +101,9 @@ void on_take_picture(sockpp::tcp_connector* conn) {
 	HunchPacket* packet = new HunchPacket();
 	packet->flags = SEND_PICTURE;
 	packet->x = jpg.size();
+	if(jpg.size() > 8388608) {
+		std::cout << "Image is too large to fit inside a float" << std::endl;
+	}
 
 	if(success) {
 		conn->write_n(reinterpret_cast<void*>(packet), sizeof(HunchPacket));

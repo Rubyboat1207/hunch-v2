@@ -8,7 +8,7 @@ struct HunchPacket {
     uint64_t flags;
     char message[1024];
 
-    static HunchPacket decode(const char* data);
+    static HunchPacket decode(const uint8_t* data);
 };
 #pragma pack(pop)
 

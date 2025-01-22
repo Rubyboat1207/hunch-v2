@@ -2,7 +2,7 @@
 #include <cstring>
 
 
-HunchPacket HunchPacket::decode(const char* data) {
+HunchPacket HunchPacket::decode(const uint8_t* data) {
 		HunchPacket packet;
 
 		// Read version
