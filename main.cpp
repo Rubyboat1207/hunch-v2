@@ -5,12 +5,13 @@
 #include "adafruitmotorhat.h"
 #include "sockpp/tcp_connector.h"
 #include <opencv2/opencv.hpp>
+#include <opencv2/videoio.hpp>
 #include <vector>
 #include <optional>
 #include "packet.h"
 
 static int PORT = 5000;
-#define HOST "10.9.11.159"
+#define HOST "10.9.11.26"
 
 using namespace std::chrono;
 
@@ -89,9 +90,19 @@ void on_take_picture(sockpp::tcp_connector* conn) {
 		exit(1);
 	}
 
+	cap.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
+	cap.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
+	cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
+
+	double width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+  double height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+  std::cout << "Resolution: " << width << " x " << height << std::endl;
+
 	cv::Mat img;
 
 	cap >> img;
+
+	std::cout << "frame is: " << img.cols << " x " << img.rows << std::endl;
 
 	std::vector<uchar> jpg;
 	
