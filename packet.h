@@ -1,0 +1,14 @@
+#include<iostream>
+
+
+#pragma pack(push, 1)
+struct HunchPacket {
+    uint16_t version;
+    float x, y, u, v;
+    uint64_t flags;
+    char message[1024];
+
+    static HunchPacket decode(const char* data);
+};
+#pragma pack(pop)
+
