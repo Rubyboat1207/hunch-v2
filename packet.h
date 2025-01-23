@@ -12,8 +12,8 @@ struct HunchPacket {
     static HunchPacket decode(const uint8_t* data);
     static void decodeTo(const uint8_t* data, HunchPacket* dest);
     static HunchPacket* ofMessage(const char* message);
-    HunchPacket();
-    HunchPacket(const uint8_t* data) {
+    inline HunchPacket() {}
+    inline HunchPacket(const uint8_t* data) {
         decodeTo(data, this);
     }
 };

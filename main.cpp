@@ -79,8 +79,8 @@ void sm_read_messages() {
 		return;
 	}
 
-    state = RobotState::HANDLE_MESSAGE;
-    processing_packet = new HunchPacket(buffer);
+	processing_packet = new HunchPacket(buffer);
+  state = RobotState::HANDLE_MESSAGE;
 }
 
 std::optional<cv::Mat> take_image() {
