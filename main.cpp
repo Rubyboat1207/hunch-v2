@@ -165,7 +165,7 @@ void sm_send_image() {
 }
 
 void updateMotor(int slot, int speed) {
-    auto motor = hat.getMotor(1);
+    auto motor = hat.getMotor(slot);
 
     if(speed != 0) {
 		motor->setSpeed(abs(speed));
