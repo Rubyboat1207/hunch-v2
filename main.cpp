@@ -16,10 +16,10 @@ static int PORT = 5000;
 using namespace std::chrono;
 
 // FLAGS:
-#define SEND_PICTURE 1
-#define DONT_INTERPRET_MOTORS 2
-
-AdafruitMotorHAT hat;
+#define S_REQUEST_PICTURE 1
+#define C_SENDING_PICTURE 1
+#define S_DONT_INTERPRET_MOTORS 2
+#define F_LOG 4
 
 float mapValue(float value, float inputMin, float inputMax, float outputMin, float outputMax) {
     // Scale the value from input range to output range
@@ -45,91 +45,128 @@ std::optional<HunchPacket> update_tcp(sockpp::tcp_connector* conn) {
 }
 
 void on_take_picture(sockpp::tcp_connector* conn);
-
+void run_motors(HunchPacket* packet);
 
 int main() {
 	std::cout << "expecting " << sizeof(HunchPacket) << " bytes.";
 
 	sockpp::initialize();
 	sockpp::tcp_connector conn;
-
+	
 	auto res = conn.connect(HOST, PORT, 10s);
 
-	if(!res) {
-		std::cerr << "Error Connecting to Host PC! (TODO: Add retrys)" << std::endl;
-		return 1;
+	while(!res) {
+		res = conn.connect(HOST, PORT, 10s);	
 	}
-	
+
 	conn.read_timeout(5s);
 
 	while(true) {
 		auto res = update_tcp(&conn);
 
 		if(res.has_value()) {
-			std::cout << "PACKET YAY!!!" << std::endl;
+			std::cout << "Packet Recieved" << std::endl;
 			auto packet = res.value();
 
-			if((packet.flags & SEND_PICTURE) == SEND_PICTURE) {
+			if((packet.flags & S_REQUEST_PICTURE) == S_REQUEST_PICTURE) {
 				std::cout << "Taking Picture!" << std::endl;
 				on_take_picture(&conn);
-				return 0;
+			}
+
+			if((packet.flags & S_DONT_INTERPRET_MOTORS) != S_DONT_INTERPRET_MOTORS) {
+				run_motors(&packet);
 			}
 		}else {
 			std::cout << "None packet, left beef" << std::endl;
 		}
-
-		return 0;
 	}
 }
 
-void on_take_picture(sockpp::tcp_connector* conn) {
-	cv::VideoCapture cap(0);
+void on_take_picture(sockpp::tcp_connector* conn)
+{
+    cv::VideoCapture cap(0);
+    if(!cap.isOpened()) {
+        std::cerr << "Camera Failed To Open" << std::endl;
+        return;
+    }
 
-	if(!cap.isOpened()) {
-		std::cerr << "Camera Failed To Open" << std::endl;
-		exit(1);
-	}
+    // Optional: set desired resolution & MJPG
+    cap.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
+    cap.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
+    cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
 
-	cap.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
-	cap.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
-	cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
+    double width  = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+    double height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+    std::cout << "Resolution: " << width << " x " << height << std::endl;
 
-	double width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
-  double height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
-  std::cout << "Resolution: " << width << " x " << height << std::endl;
+    cv::Mat img;
+    cap >> img;  // capture one frame
+    if (img.empty()) {
+        std::cerr << "Captured empty frame!\n";
+        return;
+    }
+    std::cout << "Frame is: " << img.cols << " x " << img.rows << std::endl;
 
-	cv::Mat img;
+    // Encode the frame as JPEG
+    std::vector<uchar> jpg;
+    bool success = cv::imencode(".jpg", img, jpg);
+    if(!success) {
+        std::cerr << "cv::imencode failed!\n";
+        return;
+    }
+    std::cout << "JPEG size: " << jpg.size() << " bytes\n";
 
-	cap >> img;
+    // Prepare the HunchPacket (same layout as in C#)
+    HunchPacket packet;
+    std::memset(&packet, 0, sizeof(packet));   // zero all fields
+    packet.version = 1;                        // fill what you want
+    packet.x       = 0.0f;                     // not used, but set to 0
+    packet.y       = 0.0f;                     
+    packet.u       = static_cast<int32_t>(jpg.size()); // store JPEG size
+    packet.v       = 0;                         
+    packet.flags   = C_SENDING_PICTURE;
 
-	std::cout << "frame is: " << img.cols << " x " << img.rows << std::endl;
+    // Send the HunchPacket header
+    if(!conn->write_n(reinterpret_cast<const char*>(&packet), sizeof(packet))) {
+        std::cerr << "Failed to send HunchPacket\n";
+        return;
+    }
 
-	std::vector<uchar> jpg;
-	
-	bool success = cv::imencode(".jpg", img, jpg);
-	
-	HunchPacket* packet = new HunchPacket();
-	packet->flags = SEND_PICTURE;
-	packet->u = jpg.size();
-	if(jpg.size() > 8388608) {
-		std::cout << "Image is too large to fit inside a float" << std::endl;
-	}
+    // Then send the raw JPEG data
+    if(!conn->write_n(jpg.data(), jpg.size())) {
+        std::cerr << "Failed to send JPEG data\n";
+        return;
+    }
 
-  std::cout << "jpg size is:" << jpg.size() << std::endl
-
-	if(success) {
-		conn->write_n(reinterpret_cast<void*>(packet), sizeof(HunchPacket));
-		conn->write_n(static_cast<uchar*>(jpg.data()), jpg.size());
-	}
-
-  delete packet;
-  cap.release();
+    std::cout << "Sent image successfully.\n";
 }
 
 void run_motors(HunchPacket* packet) {
+	AdafruitMotorHAT hat;
+
 	float left_motor = mapValue(packet->x, -1, 1, -255, 255);
 	float right_motor = mapValue(packet->y, -1, 1, -255, 255);
-
-	hat.getMotor(1)->setSpeed((int) left_motor);
-	hat.getMotor(2)->setSpeed((int) right_motor);
+	
+	auto left = hat.getMotor(1);
+	auto right = hat.getMotor(2);
+	
+	if(left_motor != 0) {
+		left->setSpeed(abs((int) left_motor));
+		left->run(left_motor > 0 ? 
+				AdafruitDCMotor::kForward : 
+				AdafruitDCMotor::kBackward
+		);
+	}else {
+		left->run(AdafruitDCMotor::kBrake);
+	}
+	if(right_motor != 0) {
+		right->setSpeed(abs((int) right_motor));
+		right->run(right_motor > 0 ? 
+				AdafruitDCMotor::kForward : 
+				AdafruitDCMotor::kBackward
+		);
+	}else {
+		right->run(AdafruitDCMotor::kBrake);
+	}
+	std::cout << "lm: " << left_motor << " rm: " << right_motor << std::endl;
 }
