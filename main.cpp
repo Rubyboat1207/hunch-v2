@@ -31,10 +31,12 @@ static std::vector<HunchPacket*> write_queue = std::vector<HunchPacket*>();
 static HunchPacket* processing_packet = nullptr;
 static sockpp::tcp_connector connection;
 AdafruitMotorHAT hat;
-std::string host;
-int port;
+std::string host = "10.9.11.26";
+int port = 5000;
 int left_motor_port;
 int right_motor_port;
+
+void tick_state_machine();
 
 float mapValue(float value, float inputMin, float inputMax, float outputMin, float outputMax) {
     // Scale the value from input range to output range
@@ -129,16 +131,6 @@ void sm_send_image() {
     state = RobotState::HANDLE_MESSAGE;
 }
 
-void sm_update_motors() {
-	float left_speed = mapValue(processing_packet->x, -1, 1, -255, 255);
-	float right_speed = mapValue(processing_packet->y, -1, 1, -255, 255);
-	
-	updateMotor(left_motor_port, left_speed);
-	updateMotor(right_motor_port, right_speed);
-
-    state = RobotState::HANDLE_MESSAGE;
-}
-
 void updateMotor(int slot, int speed) {
     auto motor = hat.getMotor(1);
 
@@ -151,6 +143,16 @@ void updateMotor(int slot, int speed) {
 	}else {
 		motor->run(AdafruitDCMotor::kBrake);
 	}
+}
+
+void sm_update_motors() {
+	float left_speed = mapValue(processing_packet->x, -1, 1, -255, 255);
+	float right_speed = mapValue(processing_packet->y, -1, 1, -255, 255);
+	
+	updateMotor(left_motor_port, left_speed);
+	updateMotor(right_motor_port, right_speed);
+
+    state = RobotState::HANDLE_MESSAGE;
 }
 
 void sm_housekeep() {
