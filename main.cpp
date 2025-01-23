@@ -61,8 +61,8 @@ static sockpp::tcp_connector connection;
 AdafruitMotorHAT hat;
 std::string host = "10.9.11.26";
 int port = 5000;
-int left_motor_port;
-int right_motor_port;
+int left_motor_port = 2;
+int right_motor_port = 1;
 
 void tick_state_machine();
 
