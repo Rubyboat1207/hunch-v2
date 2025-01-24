@@ -110,7 +110,7 @@ void on_take_picture(sockpp::tcp_connector* conn) {
 	
 	HunchPacket* packet = new HunchPacket();
 	packet->flags = SEND_PICTURE;
-	packet->x = jpg.size();
+	packet->u = jpg.size();
 	if(jpg.size() > 8388608) {
 		std::cout << "Image is too large to fit inside a float" << std::endl;
 	}
