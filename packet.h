@@ -4,7 +4,8 @@
 #pragma pack(push, 1)
 struct HunchPacket {
     uint16_t version;
-    float x, y, u, v;
+    float x, y;
+    int32_t u, v;
     uint64_t flags;
     char message[1024];
 
