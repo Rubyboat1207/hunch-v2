@@ -82,52 +82,32 @@ int main() {
 }
 
 void on_take_picture(sockpp::tcp_connector* conn) {
-    // GStreamer pipeline for libcamera
-    std::string pipeline = "libcamera-vid --width 640 --height 480 --framerate 30 --output - | decodebin ! videoconvert ! appsink";
+	cv::VideoCapture cap(0);
 
-    // Open the camera using the GStreamer pipeline
-    cv::VideoCapture cap(pipeline, cv::CAP_GSTREAMER);
+	if(!cap.isOpened()) {
+		std::cerr << "Camera Failed To Open" << std::endl;
+		exit(1);
+	}
 
-    if (!cap.isOpened()) {
-        std::cerr << "Camera Failed To Open" << std::endl;
-        exit(1);
-    }
+	cv::Mat img;
 
-    cv::Mat img;
-    cap >> img; // Capture a single frame
+	cap >> img;
 
-    if (img.empty()) {
-        std::cerr << "Failed to capture an image from the camera" << std::endl;
-        return;
-    }
+	std::vector<uchar> jpg;
+	
+	bool success = cv::imencode(".jpg", img, jpg);
+	
+	HunchPacket* packet = new HunchPacket();
+	packet->flags = SEND_PICTURE;
+	packet->x = jpg.size();
+	if(jpg.size() > 8388608) {
+		std::cout << "Image is too large to fit inside a float" << std::endl;
+	}
 
-    std::vector<uchar> jpg;
-    bool success = cv::imencode(".jpg", img, jpg);
-
-    if (!success) {
-        std::cerr << "Failed to encode the image as JPEG" << std::endl;
-        return;
-    }
-
-    // Create and populate the packet
-    HunchPacket* packet = new HunchPacket();
-    packet->flags = SEND_PICTURE;
-    packet->x = jpg.size();
-
-    // Ensure the size of the image is manageable
-    if (jpg.size() > 8388608) { // 8MB limit
-        std::cerr << "Image is too large to fit inside a float" << std::endl;
-        delete packet; // Clean up memory
-        return;
-    }
-
-    // Send the packet and the image data
-    if (success) {
-        conn->write_n(reinterpret_cast<void*>(packet), sizeof(HunchPacket));
-        conn->write_n(reinterpret_cast<void*>(jpg.data()), jpg.size());
-    }
-
-    delete packet; // Clean up memory
+	if(success) {
+		conn->write_n(reinterpret_cast<void*>(packet), sizeof(HunchPacket));
+		conn->write_n(static_cast<uchar*>(jpg.data()), jpg.size());
+	}
 }
 
 void run_motors(HunchPacket* packet) {
