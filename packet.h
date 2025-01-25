@@ -10,8 +10,7 @@ struct HunchPacket {
     char message[1024];
 
     static HunchPacket decode(const uint8_t* data);
-    static void decodeTo(const uint8_t* data, HunchPacket* dest);
-    static HunchPacket* ofMessage(const char* message);
+    static HunchPacket* ofMessage(std::string message);
     inline HunchPacket() {
         this->version = 1;
         this->x = 0;
@@ -19,9 +18,6 @@ struct HunchPacket {
         this->u = 0;
         this->v = 0;
         this->flags = 0;
-    }
-    inline HunchPacket(const uint8_t* data) {
-        decodeTo(data, this);
     }
 
     friend std::ostream& operator<<(std::ostream& os, const HunchPacket& packet) {

@@ -58,7 +58,7 @@ const RobotState defaultState = RobotState::READ_MESSAGES;
 
 static RobotState state = RobotState::LOADING;
 static std::vector<SendableData> write_queue = std::vector<SendableData>();
-static HunchPacket* processing_packet = nullptr;
+static HunchPacket processing_packet;
 static sockpp::tcp_connector connection;
 AdafruitMotorHAT hat;
 std::string host = "10.9.11.26";
@@ -89,10 +89,6 @@ void sm_attempt_connection() {
 }
 
 void sm_load() {
-    if(processing_packet != nullptr) {
-        delete processing_packet;
-        processing_packet = nullptr;
-    }
     sockpp::initialize();
 
     change_state(RobotState::AWAITING_CONNECTION);
@@ -115,8 +111,8 @@ void sm_read_messages() {
 	}
 
    change_state(RobotState::HANDLE_MESSAGE);
-   processing_packet = new HunchPacket(buffer);
-   std::cout << *processing_packet << std::endl;
+   processing_packet = HunchPacket::decode(buffer);
+   std::cout << processing_packet << std::endl;
 }
 
 std::optional<cv::Mat> take_image() {
@@ -183,8 +179,8 @@ void updateMotor(int slot, int speed) {
 }
 
 void sm_update_motors() {
-	float left_speed = mapValue(processing_packet->x, -1, 1, -255, 255);
-	float right_speed = mapValue(processing_packet->y, -1, 1, -255, 255);
+	float left_speed = mapValue(processing_packet.x, -1, 1, -255, 255);
+	float right_speed = mapValue(processing_packet.y, -1, 1, -255, 255);
 	
 	updateMotor(left_motor_port, left_speed);
 	updateMotor(right_motor_port, right_speed);
@@ -213,22 +209,20 @@ void sm_housekeep() {
 }
 
 void sm_handle_message() {
-    if((processing_packet->flags && ServerFlags::REQUEST_IMAGE) == ServerFlags::REQUEST_IMAGE) {
+    if((processing_packet.flags && ServerFlags::REQUEST_IMAGE) == ServerFlags::REQUEST_IMAGE) {
         change_state(RobotState::SENDING_IMAGE);
         while(state != RobotState::HANDLE_MESSAGE) {
             tick_state_machine();
         }
     }
 
-    if((processing_packet->flags && ServerFlags::DONT_INTERPRET_MOTORS) != ServerFlags::DONT_INTERPRET_MOTORS) {
+    if((processing_packet.flags && ServerFlags::DONT_INTERPRET_MOTORS) != ServerFlags::DONT_INTERPRET_MOTORS) {
         change_state(RobotState::UPDATING_MOTORS);
         while(state != RobotState::HANDLE_MESSAGE) {
             tick_state_machine();
         }
     }
 
-    delete processing_packet;
-    processing_packet = nullptr;
     change_state(RobotState::HOUSEKEEPING);
 }
 
