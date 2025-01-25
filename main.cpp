@@ -198,13 +198,12 @@ void sm_housekeep() {
     for(auto packet : write_queue) {
         if(packet.packet.has_value()) {
             connection.write_n(reinterpret_cast<const char*>(packet.packet.value()), sizeof(HunchPacket));
-            if(packet.packet.value()->message[0] != '\0') {
-                std::cout << packet.packet.value()->message << std::endl;
-            }
+            std::cout << "sending" << *packet.packet.value() << std::endl;
             delete packet.packet.value();
         }
         if(packet.extra_data.has_value()) {
             auto v = packet.extra_data.value();
+            std::cout << "Sending " << v.second << " extra bytes of extra data." << std::endl;
             connection.write_n(reinterpret_cast<const char*>(v.first), v.second);
             delete v.first;
         }
