@@ -24,6 +24,20 @@ enum class RobotState {
     HANDLE_MESSAGE
 };
 
+std::string state_to_string(RobotState state) {
+    switch (state) {
+        case RobotState::LOADING: return "LOADING";
+        case RobotState::AWAITING_CONNECTION: return "AWAITING_CONNECTION";
+        case RobotState::ACQUIRED_CONNECTION: return "ACQUIRED_CONNECTION";
+        case RobotState::READ_MESSAGES: return "READ_MESSAGES";
+        case RobotState::UPDATING_MOTORS: return "UPDATING_MOTORS";
+        case RobotState::SENDING_IMAGE: return "SENDING_IMAGE";
+        case RobotState::HOUSEKEEPING: return "HOUSEKEEPING";
+        case RobotState::HANDLE_MESSAGE: return "HANDLE_MESSAGE";
+        default: return "UNKNOWN_STATE";
+    }
+}
+
 const RobotState defaultState = RobotState::READ_MESSAGES;
 
 static RobotState state = RobotState::LOADING;
@@ -44,12 +58,17 @@ float mapValue(float value, float inputMin, float inputMax, float outputMin, flo
     return outputMin + scaledValue * (outputMax - outputMin);
 }
 
+void change_state(RobotState new_state) {
+    state = new_state;
+    std::cout << "setting state to: " << state_to_string(state) << std::endl;
+}
+
 void sm_attempt_connection() {
     auto result = connection.connect(host, port, 10s);
 
     if(result) {
         connection.read_timeout(5s);
-        state = RobotState::ACQUIRED_CONNECTION;
+        change_state(RobotState::ACQUIRED_CONNECTION);
     }
 }
 
@@ -60,13 +79,13 @@ void sm_load() {
     }
     sockpp::initialize();
 
-    state = RobotState::AWAITING_CONNECTION;
+    change_state(RobotState::AWAITING_CONNECTION);
 }
 
 void sm_on_connected() {
     write_queue.push_back(HunchPacket::ofMessage("Connected to server successfully!"));
 
-    state = RobotState::READ_MESSAGES;
+    change_state(RobotState::READ_MESSAGES);
 }
 
 void sm_read_messages() {
@@ -79,7 +98,7 @@ void sm_read_messages() {
 		return;
 	}
 
-    state = RobotState::HANDLE_MESSAGE;
+    change_state(RobotState::HANDLE_MESSAGE);
     processing_packet = new HunchPacket(buffer);
 }
 
@@ -129,7 +148,7 @@ void sm_send_image() {
     packet->u = jpg.size();
     packet->flags = ClientFlags::SENDING_PICTURE;
 
-    state = RobotState::HANDLE_MESSAGE;
+    change_state(RobotState::HANDLE_MESSAGE);
 }
 
 void updateMotor(int slot, int speed) {
@@ -153,37 +172,37 @@ void sm_update_motors() {
 	updateMotor(left_motor_port, left_speed);
 	updateMotor(right_motor_port, right_speed);
 
-    state = RobotState::HANDLE_MESSAGE;
+    change_state(RobotState::HANDLE_MESSAGE);
 }
 
 void sm_housekeep() {
     for(auto packet : write_queue) {
-        connection.write_n(reinterpret_cast<const char*>(&packet), sizeof(packet));
+        connection.write_n(reinterpret_cast<const char*>(packet), sizeof(HunchPacket));
         delete packet;
     }
 
     write_queue.clear();
-    state = RobotState::READ_MESSAGES;
+    change_state(RobotState::READ_MESSAGES);
 }
 
 void sm_handle_message() {
     if((processing_packet->flags && ServerFlags::REQUEST_IMAGE) == ServerFlags::REQUEST_IMAGE) {
-        state = RobotState::SENDING_IMAGE;
+        change_state(RobotState::SENDING_IMAGE);
         while(state != RobotState::HANDLE_MESSAGE) {
             tick_state_machine();
         }
     }
 
     if((processing_packet->flags && ServerFlags::DONT_INTERPRET_MOTORS) != ServerFlags::DONT_INTERPRET_MOTORS) {
-        state = RobotState::UPDATING_MOTORS;
+        change_state(RobotState::UPDATING_MOTORS);
         while(state != RobotState::HANDLE_MESSAGE) {
             tick_state_machine();
         }
     }
-    
+
     delete processing_packet;
     processing_packet = nullptr;
-    state = RobotState::HOUSEKEEPING;
+    change_state(RobotState::HOUSEKEEPING);
 }
 
 void tick_state_machine() {
