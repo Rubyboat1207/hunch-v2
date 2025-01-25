@@ -42,7 +42,7 @@ float mapValue(float value, float inputMin, float inputMax, float outputMin, flo
     return outputMin + scaledValue * (outputMax - outputMin);
 }
 
-void attempt_connection() {
+void sm_attempt_connection() {
     auto result = connection.connect(host, port, 10s);
 
     if(result) {
@@ -51,7 +51,7 @@ void attempt_connection() {
     }
 }
 
-void load() {
+void sm_load() {
     if(processing_packet != nullptr) {
         delete processing_packet;
         processing_packet = nullptr;
@@ -61,13 +61,13 @@ void load() {
     state = RobotState::AWAITING_CONNECTION;
 }
 
-void on_connected() {
+void sm_on_connected() {
     write_queue.push_back(HunchPacket::ofMessage("Connected to server successfully!"));
 
     state = RobotState::READ_MESSAGES;
 }
 
-void read_messages() {
+void sm_read_messages() {
     uint8_t buffer[sizeof(HunchPacket)];
     std::memset(&buffer, 0, sizeof(buffer));
     
@@ -76,6 +76,8 @@ void read_messages() {
 	if(!res) {
 		return;
 	}
+
+    state = RobotState::HANDLE_MESSAGE;
 }
 
 std::optional<cv::Mat> take_image() {
@@ -102,7 +104,7 @@ std::optional<cv::Mat> take_image() {
     return std::optional<cv::Mat>(img);
 }
 
-void send_image() {
+void sm_send_image() {
     auto mat = take_image();
 
     if(!mat.has_value()) {
@@ -123,14 +125,18 @@ void send_image() {
     HunchPacket* packet = new HunchPacket();
     packet->u = jpg.size();
     packet->flags = ClientFlags::SENDING_PICTURE;
+
+    state = RobotState::HANDLE_MESSAGE;
 }
 
-void update_motors() {
+void sm_update_motors() {
 	float left_speed = mapValue(processing_packet->x, -1, 1, -255, 255);
 	float right_speed = mapValue(processing_packet->y, -1, 1, -255, 255);
 	
 	updateMotor(left_motor_port, left_speed);
 	updateMotor(right_motor_port, right_speed);
+
+    state = RobotState::HANDLE_MESSAGE;
 }
 
 void updateMotor(int slot, int speed) {
@@ -147,7 +153,7 @@ void updateMotor(int slot, int speed) {
 	}
 }
 
-void send_queued_packets() {
+void sm_housekeep() {
     for(auto packet : write_queue) {
         connection.write_n(reinterpret_cast<const char*>(&packet), sizeof(packet));
         delete packet;
@@ -157,7 +163,7 @@ void send_queued_packets() {
     state = RobotState::READ_MESSAGES;
 }
 
-void handle_message() {
+void sm_handle_message() {
     if((processing_packet->flags && ServerFlags::REQUEST_IMAGE) == ServerFlags::REQUEST_IMAGE) {
         state = RobotState::SENDING_IMAGE;
         while(state != RobotState::HANDLE_MESSAGE) {
@@ -179,18 +185,18 @@ void handle_message() {
 void tick_state_machine() {
     try {
         switch (state) {
-            case(RobotState::LOADING): load(); break;
-            case(RobotState::AWAITING_CONNECTION): attempt_connection(); break;
-            case(RobotState::ACQUIRED_CONNECTION): on_connected(); break;
-            case(RobotState::READ_MESSAGES): read_messages(); break;
-            case(RobotState::HANDLE_MESSAGE): handle_message(); break;
-            case(RobotState::UPDATING_MOTORS): update_motors(); break;
-            case(RobotState::SENDING_IMAGE): send_image(); break;
-            case(RobotState::HOUSEKEEPING): send_queued_packets(); break;
+            case(RobotState::LOADING): sm_load(); break;
+            case(RobotState::AWAITING_CONNECTION): sm_attempt_connection(); break;
+            case(RobotState::ACQUIRED_CONNECTION): sm_on_connected(); break;
+            case(RobotState::READ_MESSAGES): sm_read_messages(); break;
+            case(RobotState::HANDLE_MESSAGE): sm_handle_message(); break;
+            case(RobotState::UPDATING_MOTORS): sm_update_motors(); break;
+            case(RobotState::SENDING_IMAGE): sm_send_image(); break;
+            case(RobotState::HOUSEKEEPING): sm_housekeep(); break;
         }
     }catch(...) {
         // some horrible exception just occurred. restart.
-        write_queue.push_back(HunchPacket::ofMessage("Horrible crash just occurred, but not a segfault. Good luck"));
+        write_queue.push_back(HunchPacket::ofMessage("Horrible crash just occurred, but not a segfault. Good luck. Restarting."));
         state = RobotState::LOADING;
     }
 }
