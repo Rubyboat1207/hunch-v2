@@ -160,7 +160,7 @@ void sm_send_image() {
     packet->flags = ClientFlags::SENDING_PICTURE;
     uint8_t* data = new uint8_t[jpg.size()];
     memcpy(data, reinterpret_cast<uint8_t*>(jpg.data()), jpg.size());
-    write_queue.push_back(SendableData(packet, std::make_pair(data, sizeof(data))));
+    write_queue.push_back(SendableData(packet, std::make_pair(data, jpg.size())));
     change_state(RobotState::HANDLE_MESSAGE);
 }
 
