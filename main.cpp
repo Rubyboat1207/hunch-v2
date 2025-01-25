@@ -196,6 +196,9 @@ void sm_housekeep() {
     for(auto packet : write_queue) {
         if(packet.packet.has_value()) {
             connection.write_n(reinterpret_cast<const char*>(packet.packet.value()), sizeof(HunchPacket));
+            if(packet.packet.value()->message[0] != '\0') {
+                std::cout << packet.packet.value()->message << std::endl;
+            }
             delete packet.packet.value();
         }
         if(packet.extra_data.has_value()) {
