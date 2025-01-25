@@ -80,6 +80,7 @@ void sm_read_messages() {
 	}
 
     state = RobotState::HANDLE_MESSAGE;
+    processing_packet = new HunchPacket(buffer);
 }
 
 std::optional<cv::Mat> take_image() {
@@ -180,6 +181,7 @@ void sm_handle_message() {
         }
     }
     
+    delete processing_packet;
     processing_packet = nullptr;
     state = RobotState::HOUSEKEEPING;
 }
