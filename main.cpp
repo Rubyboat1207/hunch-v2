@@ -20,7 +20,6 @@ enum class RobotState {
     READ_MESSAGES,
     UPDATING_MOTORS,
     SENDING_IMAGE,
-    HOUSEKEEPING,
     HANDLE_MESSAGE
 };
 
@@ -32,7 +31,6 @@ std::string state_to_string(RobotState state) {
         case RobotState::READ_MESSAGES: return "READ_MESSAGES";
         case RobotState::UPDATING_MOTORS: return "UPDATING_MOTORS";
         case RobotState::SENDING_IMAGE: return "SENDING_IMAGE";
-        case RobotState::HOUSEKEEPING: return "HOUSEKEEPING";
         case RobotState::HANDLE_MESSAGE: return "HANDLE_MESSAGE";
         default: return "UNKNOWN_STATE";
     }
@@ -210,7 +208,6 @@ void sm_housekeep() {
     }
 
     write_queue.clear();
-    change_state(RobotState::READ_MESSAGES);
 }
 
 void sm_handle_message() {
@@ -228,7 +225,7 @@ void sm_handle_message() {
         }
     }
 
-    change_state(RobotState::HOUSEKEEPING);
+    change_state(RobotState::READ_MESSAGES);
 }
 
 void tick_state_machine() {
@@ -242,7 +239,6 @@ void tick_state_machine() {
             case(RobotState::HANDLE_MESSAGE): sm_handle_message(); break;
             case(RobotState::UPDATING_MOTORS): sm_update_motors(); break;
             case(RobotState::SENDING_IMAGE): sm_send_image(); break;
-            case(RobotState::HOUSEKEEPING): sm_housekeep(); break;
         }
     }catch(...) {
         // some horrible exception just occurred. restart.
