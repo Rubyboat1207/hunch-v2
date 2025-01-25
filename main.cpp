@@ -160,7 +160,9 @@ void sm_send_image() {
     HunchPacket* packet = new HunchPacket();
     packet->u = jpg.size();
     packet->flags = ClientFlags::SENDING_PICTURE;
-
+    uint8_t* data = new uint8_t[jpg.size()];
+    memcpy(data, reinterpret_cast<uint8_t*>(jpg.data()), jpg.size());
+    write_queue.push_back(SendableData(packet, std::make_pair(data, sizeof(data))));
     change_state(RobotState::HANDLE_MESSAGE);
 }
 
@@ -189,6 +191,10 @@ void sm_update_motors() {
 }
 
 void sm_housekeep() {
+    if(!connection.is_open()) {
+        change_state(RobotState::AWAITING_CONNECTION);
+        return;
+    }
     for(auto packet : write_queue) {
         if(packet.packet.has_value()) {
             connection.write_n(reinterpret_cast<const char*>(packet.packet.value()), sizeof(HunchPacket));
@@ -227,6 +233,7 @@ void sm_handle_message() {
 }
 
 void tick_state_machine() {
+    sm_housekeep();
     try {
         switch (state) {
             case(RobotState::LOADING): sm_load(); break;
