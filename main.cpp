@@ -38,10 +38,26 @@ std::string state_to_string(RobotState state) {
     }
 }
 
+struct SendableData {
+    std::optional<HunchPacket*> packet;
+    std::optional<std::pair<uint8_t*, int>> extra_data;
+
+    SendableData(HunchPacket* hp) {
+        packet = std::optional<HunchPacket*>(hp);
+    }
+    SendableData(std::pair<uint8_t*, int> data) {
+        extra_data = std::optional<std::pair<uint8_t*, int>>(data);
+    }
+    SendableData(HunchPacket* hp, std::pair<uint8_t*, int> data) {
+        packet = std::optional<HunchPacket*>(hp);
+        extra_data = std::optional<std::pair<uint8_t*, int>>(data);
+    }
+};
+
 const RobotState defaultState = RobotState::READ_MESSAGES;
 
 static RobotState state = RobotState::LOADING;
-static std::vector<HunchPacket*> write_queue = std::vector<HunchPacket*>();
+static std::vector<SendableData> write_queue = std::vector<SendableData>();
 static HunchPacket* processing_packet = nullptr;
 static sockpp::tcp_connector connection;
 AdafruitMotorHAT hat;
@@ -83,7 +99,7 @@ void sm_load() {
 }
 
 void sm_on_connected() {
-    write_queue.push_back(HunchPacket::ofMessage("Connected to server successfully!"));
+    write_queue.push_back(SendableData(HunchPacket::ofMessage("Connected to server successfully!")));
 
     change_state(RobotState::READ_MESSAGES);
 }
@@ -100,12 +116,13 @@ void sm_read_messages() {
 
    change_state(RobotState::HANDLE_MESSAGE);
    processing_packet = new HunchPacket(buffer);
+   std::cout << *processing_packet << std::endl;
 }
 
 std::optional<cv::Mat> take_image() {
     cv::VideoCapture cap(0);
     if(!cap.isOpened()) {
-        write_queue.push_back(HunchPacket::ofMessage("Camera failed to open."));
+        write_queue.push_back(SendableData(HunchPacket::ofMessage("Camera failed to open.")));
         return std::nullopt;
     }
 
@@ -119,7 +136,7 @@ std::optional<cv::Mat> take_image() {
     cv::Mat img;
     cap >> img;
     if (img.empty()) {
-        write_queue.push_back(HunchPacket::ofMessage("Frame was empty!"));
+        write_queue.push_back(SendableData(HunchPacket::ofMessage("Frame was empty!")));
         return std::nullopt;
     }
 
@@ -137,11 +154,11 @@ void sm_send_image() {
     try {
         bool success = cv::imencode(".jpg", mat.value(), jpg);
         if(!success) {
-            write_queue.push_back(HunchPacket::ofMessage("Encoding failed."));
+            write_queue.push_back(SendableData(HunchPacket::ofMessage("Encoding failed.")));
             return;
         }
     }catch(std::exception ex) {
-        write_queue.push_back(HunchPacket::ofMessage("Encoding failed catastrophically."));
+        write_queue.push_back(SendableData(HunchPacket::ofMessage("Encoding failed catastrophically.")));
     }
     
     HunchPacket* packet = new HunchPacket();
@@ -177,8 +194,15 @@ void sm_update_motors() {
 
 void sm_housekeep() {
     for(auto packet : write_queue) {
-        connection.write_n(reinterpret_cast<const char*>(packet), sizeof(HunchPacket));
-        delete packet;
+        if(packet.packet.has_value()) {
+            connection.write_n(reinterpret_cast<const char*>(packet.packet.value()), sizeof(HunchPacket));
+            delete packet.packet.value();
+        }
+        if(packet.extra_data.has_value()) {
+            auto v = packet.extra_data.value();
+            connection.write_n(reinterpret_cast<const char*>(v.first), v.second);
+            delete v.first;
+        }
     }
 
     write_queue.clear();
@@ -219,7 +243,7 @@ void tick_state_machine() {
         }
     }catch(...) {
         // some horrible exception just occurred. restart.
-        write_queue.push_back(HunchPacket::ofMessage("Horrible crash just occurred, but not a segfault. Good luck. Restarting."));
+        write_queue.push_back(SendableData(HunchPacket::ofMessage("Horrible crash just occurred, but not a segfault. Good luck. Restarting.")));
         state = RobotState::LOADING;
     }
 }
