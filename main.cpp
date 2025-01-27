@@ -210,25 +210,34 @@ void sm_housekeep() {
     write_queue.clear();
 }
 
-void sm_handle_message() {
+void sm_handle_message(int depth) {
+    if((processing_packet.flags && ServerFlags::PANIC_RESET) == ServerFlags::PANIC_RESET) {
+        change_state(RobotState::LOADING);
+        return;
+    }
     if((processing_packet.flags && ServerFlags::REQUEST_IMAGE) == ServerFlags::REQUEST_IMAGE) {
         change_state(RobotState::SENDING_IMAGE);
-        while(state != RobotState::HANDLE_MESSAGE) {
-            tick_state_machine();
-        }
+        tick_until(RobotState::HANDLE_MESSAGE, depth);
     }
 
     if((processing_packet.flags && ServerFlags::DONT_INTERPRET_MOTORS) != ServerFlags::DONT_INTERPRET_MOTORS) {
         change_state(RobotState::UPDATING_MOTORS);
-        while(state != RobotState::HANDLE_MESSAGE) {
-            tick_state_machine();
-        }
+        tick_until(RobotState::HANDLE_MESSAGE, depth);
     }
 
     change_state(RobotState::READ_MESSAGES);
 }
 
-void tick_state_machine() {
+void tick_until(RobotState target, int depth) {
+    if(depth > 10) {
+        throw std::runtime_error("Recursion depth exceeded.");
+    }
+    while(state != target) {
+        tick_state_machine(depth + 1);
+    }
+}
+
+void tick_state_machine(int depth=0) {
     sm_housekeep();
     try {
         switch (state) {
@@ -236,13 +245,13 @@ void tick_state_machine() {
             case(RobotState::AWAITING_CONNECTION): sm_attempt_connection(); break;
             case(RobotState::ACQUIRED_CONNECTION): sm_on_connected(); break;
             case(RobotState::READ_MESSAGES): sm_read_messages(); break;
-            case(RobotState::HANDLE_MESSAGE): sm_handle_message(); break;
+            case(RobotState::HANDLE_MESSAGE): sm_handle_message(depth); break;
             case(RobotState::UPDATING_MOTORS): sm_update_motors(); break;
             case(RobotState::SENDING_IMAGE): sm_send_image(); break;
         }
-    }catch(...) {
+    }catch(std::exception& ex) {
         // some horrible exception just occurred. restart.
-        write_queue.push_back(SendableData(HunchPacket::ofMessage("Horrible crash just occurred, but not a segfault. Good luck. Restarting.")));
+        write_queue.push_back(SendableData(HunchPacket::ofMessage(std::string("Horrible crash just occurred, but not a segfault. ex: ") + ex.what())));
         state = RobotState::LOADING;
     }
 }
@@ -250,6 +259,6 @@ void tick_state_machine() {
 
 int main() {
     while(true) {
-        tick_state_machine();
+        tick_state_machine(0);
     }
 }

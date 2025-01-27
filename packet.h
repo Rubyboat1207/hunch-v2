@@ -42,4 +42,5 @@ struct ServerFlags {
     const static uint64_t REQUEST_IMAGE = 1;
     const static uint64_t DONT_INTERPRET_MOTORS = 2;
     const static uint64_t LOG = 4;
+    const static uint64_t PANIC_RESET = 8;
 };
