@@ -50,10 +50,12 @@ float mapValue(float value, float inputMin, float inputMax, float outputMin, flo
     return outputMin + scaledValue * (outputMax - outputMin);
 }
 
-void change_state(RobotState new_state) {
+void change_state(RobotState new_state, bool should_log=true) {
     state = new_state;
     // std::cout << "setting state to: " << state_to_string(state) << std::endl;
-    log(LogLevel::INFO, "Setting state to: " + state_to_string(state));
+    if(!should_log) {
+        log(LogLevel::INFO, "Setting state to: " + state_to_string(state));
+    }
 }
 
 void sm_attempt_connection() {
@@ -68,7 +70,7 @@ void sm_attempt_connection() {
 void sm_load() {
     sockpp::initialize();
 
-    change_state(RobotState::AWAITING_CONNECTION);
+    change_state(RobotState::AWAITING_CONNECTION, false);
 }
 
 void sm_on_connected() {
