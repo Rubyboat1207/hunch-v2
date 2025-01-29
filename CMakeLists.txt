@@ -3,7 +3,7 @@ project(hunch VERSION 1.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_executable(hunch main.cpp packet.cpp)
+add_executable(hunch main.cpp packet.cpp state_machine.cpp)
 
 set(MOTORHAT_DIR ${CMAKE_SOURCE_DIR}/adafruit-motor-hat-cpp-library)
 set(OPENCV_INCLUDE_DIR /usr/local/include/opencv4)

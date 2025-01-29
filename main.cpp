@@ -10,52 +10,21 @@
 #include <vector>
 #include <optional>
 #include "packet.h"
+#include "state_machine.h"
 
 using namespace std::chrono;
 
-enum class RobotState {
-    LOADING,
-    AWAITING_CONNECTION,
-    ACQUIRED_CONNECTION,
-    READ_MESSAGES,
-    UPDATING_MOTORS,
-    SENDING_IMAGE,
-    HANDLE_MESSAGE
-};
-
-std::string state_to_string(RobotState state) {
-    switch (state) {
-        case RobotState::LOADING: return "LOADING";
-        case RobotState::AWAITING_CONNECTION: return "AWAITING_CONNECTION";
-        case RobotState::ACQUIRED_CONNECTION: return "ACQUIRED_CONNECTION";
-        case RobotState::READ_MESSAGES: return "READ_MESSAGES";
-        case RobotState::UPDATING_MOTORS: return "UPDATING_MOTORS";
-        case RobotState::SENDING_IMAGE: return "SENDING_IMAGE";
-        case RobotState::HANDLE_MESSAGE: return "HANDLE_MESSAGE";
-        default: return "UNKNOWN_STATE";
-    }
-}
-
-struct SendableData {
-    std::optional<HunchPacket*> packet;
-    std::optional<std::pair<uint8_t*, int>> extra_data;
-
-    SendableData(HunchPacket* hp) {
-        packet = std::optional<HunchPacket*>(hp);
-    }
-    SendableData(std::pair<uint8_t*, int> data) {
-        extra_data = std::optional<std::pair<uint8_t*, int>>(data);
-    }
-    SendableData(HunchPacket* hp, std::pair<uint8_t*, int> data) {
-        packet = std::optional<HunchPacket*>(hp);
-        extra_data = std::optional<std::pair<uint8_t*, int>>(data);
-    }
+enum class LogLevel {
+    INFO,
+    WARNING,
+    ERR
 };
 
 const RobotState defaultState = RobotState::READ_MESSAGES;
 
 static RobotState state = RobotState::LOADING;
 static std::vector<SendableData> write_queue = std::vector<SendableData>();
+static std::vector<std::string> log_queue = std::vector<std::string>();
 static HunchPacket processing_packet;
 static sockpp::tcp_connector connection;
 AdafruitMotorHAT hat;
@@ -64,7 +33,16 @@ int port = 5000;
 int left_motor_port = 2;
 int right_motor_port = 1;
 
-void tick_state_machine();
+void log(LogLevel level, std::string message) {
+    std::string prefix = "";
+    switch (level) {
+        case LogLevel::INFO: prefix = "[INFO] "; break;
+        case LogLevel::WARNING: prefix = "[WARNING] "; break;
+        case LogLevel::ERR: prefix = "[ERROR] "; break;
+    }
+    log_queue.push_back(prefix + message);
+    std::cout << prefix << message << std::endl;
+}
 
 float mapValue(float value, float inputMin, float inputMax, float outputMin, float outputMax) {
     // Scale the value from input range to output range
@@ -74,7 +52,8 @@ float mapValue(float value, float inputMin, float inputMax, float outputMin, flo
 
 void change_state(RobotState new_state) {
     state = new_state;
-    std::cout << "setting state to: " << state_to_string(state) << std::endl;
+    // std::cout << "setting state to: " << state_to_string(state) << std::endl;
+    log(LogLevel::INFO, "Setting state to: " + state_to_string(state));
 }
 
 void sm_attempt_connection() {
@@ -93,7 +72,7 @@ void sm_load() {
 }
 
 void sm_on_connected() {
-    write_queue.push_back(SendableData(HunchPacket::ofMessage("Connected to server successfully!")));
+    log(LogLevel::INFO, "Connected to server successfully!");
 
     change_state(RobotState::READ_MESSAGES);
 }
@@ -116,7 +95,7 @@ void sm_read_messages() {
 std::optional<cv::Mat> take_image() {
     cv::VideoCapture cap(0);
     if(!cap.isOpened()) {
-        write_queue.push_back(SendableData(HunchPacket::ofMessage("Camera failed to open.")));
+        log(LogLevel::ERR, "Camera failed to open.");
         return std::nullopt;
     }
 
@@ -130,7 +109,7 @@ std::optional<cv::Mat> take_image() {
     cv::Mat img;
     cap >> img;
     if (img.empty()) {
-        write_queue.push_back(SendableData(HunchPacket::ofMessage("Frame was empty!")));
+        log(LogLevel::ERR, "Frame was empty!");
         return std::nullopt;
     }
 
@@ -148,11 +127,12 @@ void sm_send_image() {
     try {
         bool success = cv::imencode(".jpg", mat.value(), jpg);
         if(!success) {
-            write_queue.push_back(SendableData(HunchPacket::ofMessage("Encoding failed.")));
+            log(LogLevel::ERR, "Encoding failed.");
             return;
         }
     }catch(std::exception ex) {
-        write_queue.push_back(SendableData(HunchPacket::ofMessage("Encoding failed catastrophically.")));
+        log(LogLevel::ERR, "Encoding failed catastrophically.");
+        return;
     }
     
     HunchPacket* packet = new HunchPacket();
@@ -188,23 +168,62 @@ void sm_update_motors() {
     change_state(RobotState::HANDLE_MESSAGE);
 }
 
+void process_logs() {
+    std::optional<std::string> message = std::nullopt;
+    if(log_queue.size() > 0) {
+        std::string log_message = "";
+        for(auto queued_message : log_queue) {
+            log_message += queued_message + "\n";
+        }
+        log_queue.clear();
+        message = std::optional<std::string>(log_message);
+    }
+    if(message.has_value()) {
+        auto msg = message.value();
+        int req_packets = (msg.size() / 1024) + 1;
+        for(int i = 0; i < req_packets; i++) {
+            int start = i * 1024;
+            int end = (i + 1) * 1024;
+            if(end > msg.size()) {
+                end = msg.size();
+            }
+            std::string sub = msg.substr(start, end - start);
+            // check if a packet is able to be hijacked for this message
+            bool found = false;
+            for(auto packet : write_queue) {
+                if(packet.packet.has_value() && packet.packet.value()->message[0] == '\0') {
+                    std::memcpy(packet.packet.value()->message, sub.c_str(), sub.size());
+                    found = true;
+                    break;
+                }
+            }
+            if(!found) {
+                write_queue.push_back(SendableData(HunchPacket::ofMessage(sub)));
+            }
+        }
+    }
+}
+
 void sm_housekeep() {
     if(!connection.is_open()) {
         change_state(RobotState::AWAITING_CONNECTION);
         return;
     }
+    
+    process_logs();
+    
     for(auto packet : write_queue) {
         if(packet.packet.has_value()) {
             connection.write_n(reinterpret_cast<const char*>(packet.packet.value()), sizeof(HunchPacket));
             std::cout << "sending" << *packet.packet.value() << std::endl;
-            delete packet.packet.value();
         }
         if(packet.extra_data.has_value()) {
             auto v = packet.extra_data.value();
             std::cout << "Sending " << v.second << " extra bytes of extra data." << std::endl;
             connection.write_n(reinterpret_cast<const char*>(v.first), v.second);
-            delete v.first;
         }
+
+        packet.clean();
     }
 
     write_queue.clear();

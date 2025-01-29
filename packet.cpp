@@ -36,3 +36,31 @@ HunchPacket *HunchPacket::ofMessage(std::string message)
 
   return packet;
 }
+
+SendableData::SendableData(HunchPacket *hp)
+{
+  packet = std::optional<HunchPacket *>(hp);
+}
+
+SendableData::SendableData(std::pair<uint8_t *, int> data)
+{
+  extra_data = std::optional<std::pair<uint8_t *, int>>(data);
+}
+
+SendableData::SendableData(HunchPacket* hp, std::pair<uint8_t*, int> data)
+{
+	packet = std::optional<HunchPacket*>(hp);
+	extra_data = std::optional<std::pair<uint8_t*, int>>(data);
+}
+
+void SendableData::clean()
+{
+  if (packet.has_value())
+  {
+	delete packet.value();
+  }
+  if (extra_data.has_value())
+  {
+	delete extra_data.value().first;
+  }
+}

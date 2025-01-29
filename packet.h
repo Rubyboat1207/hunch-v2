@@ -1,4 +1,5 @@
 #include<iostream>
+#include<optional>
 
 
 #pragma pack(push, 1)
@@ -43,4 +44,14 @@ struct ServerFlags {
     const static uint64_t DONT_INTERPRET_MOTORS = 2;
     const static uint64_t LOG = 4;
     const static uint64_t PANIC_RESET = 8;
+};
+
+struct SendableData {
+    std::optional<HunchPacket*> packet;
+    std::optional<std::pair<uint8_t*, int>> extra_data;
+
+    SendableData(HunchPacket* hp);
+    SendableData(std::pair<uint8_t*, int> data);
+    SendableData(HunchPacket* hp, std::pair<uint8_t*, int> data);
+    void clean();
 };
