@@ -53,7 +53,7 @@ float mapValue(float value, float inputMin, float inputMax, float outputMin, flo
 void change_state(RobotState new_state, bool should_log=true) {
     state = new_state;
     // std::cout << "setting state to: " << state_to_string(state) << std::endl;
-    if(!should_log) {
+    if(should_log) {
         log(LogLevel::INFO, "Setting state to: " + state_to_string(state));
     }
 }
@@ -208,7 +208,7 @@ void process_logs() {
 
 void sm_housekeep() {
     if(!connection.is_open()) {
-        change_state(RobotState::AWAITING_CONNECTION);
+        change_state(RobotState::AWAITING_CONNECTION, false);
         return;
     }
     
