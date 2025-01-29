@@ -26,9 +26,7 @@ target_link_libraries(hunch PUBLIC ${OpenCV_LIBS})
 include_directories(${CMAKE_SOURCE_DIR})
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    add_definitions(-DWIN32)  # Define WIN32 for your compiler
-elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_definitions(-DLINUX)
+    add_definitions(-DDBG)  # Define WIN32 for your compiler
 endif()
 
 
