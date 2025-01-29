@@ -256,7 +256,7 @@ void tick_until(RobotState target, int depth) {
     }
 }
 
-void tick_state_machine(int depth=0) {
+void tick_state_machine(int depth) {
     sm_housekeep();
     try {
         switch (state) {

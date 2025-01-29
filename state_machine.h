@@ -13,3 +13,4 @@ enum class RobotState {
 std::string state_to_string(RobotState state);
 
 void tick_state_machine(int depth=0);
+void tick_until(RobotState target, int depth);
