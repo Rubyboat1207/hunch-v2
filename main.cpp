@@ -308,7 +308,7 @@ void tick_state_machine(int depth) {
 void maintain_heartbeat() {
     long time_since_last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() - last_received_heartbeat;
 
-    if(time_since_last_heartbeat > (heartbeat_timeout * 1000)) {
+    if(time_since_last_heartbeat > (heartbeat_freq * 1000)) {
         add_to_write_queue(SendableData(HunchPacket::ofMessage(std::string("Heartbeat missed! Sending!"))));
     }
 
@@ -329,7 +329,10 @@ void keep_up_heartbeat() {
 }
 
 int main() {
+    std::thread heartbeat_thread(keep_up_heartbeat);
     while(true) {
         tick_state_machine(0);
     }
+    heartbeat_thread.join();
+    return 0;
 }
