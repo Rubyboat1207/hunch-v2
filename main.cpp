@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#define DBG
 #include "adafruitdcmotor.h"
 #include "adafruitmotorhat.h"
 #include "sockpp/tcp_connector.h"
@@ -11,6 +12,8 @@
 #include <optional>
 #include "packet.h"
 #include "state_machine.h"
+#include <thread>
+#include <mutex>
 
 using namespace std::chrono;
 
@@ -32,6 +35,22 @@ std::string host = "10.9.11.26";
 int port = 5000;
 int left_motor_port = 2;
 int right_motor_port = 1;
+float heartbeat_freq = 2;
+float heartbeat_timeout = 15;
+long last_sent_heartbeat = 0;
+long last_received_heartbeat = 0;
+
+std::mutex write_queue_mutex;
+std::mutex connection_write_mutex;
+
+void update_last_heartbeat_time() {
+    last_sent_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+void add_to_write_queue(const SendableData& data) {
+    std::lock_guard<std::mutex> guard(write_queue_mutex);
+    write_queue.push_back(data);
+}
 
 void log(LogLevel level, std::string message) {
     std::string prefix = "";
@@ -77,6 +96,7 @@ void sm_on_connected() {
     log(LogLevel::INFO, "Connected to server successfully!");
 
     change_state(RobotState::READ_MESSAGES);
+
 }
 
 void sm_read_messages() {
@@ -142,7 +162,7 @@ void sm_send_image() {
     packet->flags = ClientFlags::SENDING_PICTURE;
     uint8_t* data = new uint8_t[jpg.size()];
     memcpy(data, reinterpret_cast<uint8_t*>(jpg.data()), jpg.size());
-    write_queue.push_back(SendableData(packet, std::make_pair(data, jpg.size())));
+    add_to_write_queue(SendableData(packet, std::make_pair(data, jpg.size())));
     change_state(RobotState::HANDLE_MESSAGE);
 }
 
@@ -200,21 +220,24 @@ void process_logs() {
                 }
             }
             if(!found) {
-                write_queue.push_back(SendableData(HunchPacket::ofMessage(sub)));
+                std::lock_guard<std::mutex> guard(write_queue_mutex);
+                add_to_write_queue(SendableData(HunchPacket::ofMessage(sub)));
             }
         }
     }
 }
 
 void sm_housekeep() {
-    if(!connection.is_open()) {
+    long time_since_last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() - last_sent_heartbeat;
+    if(!connection.is_open() || time_since_last_heartbeat > (heartbeat_timeout * 1000)) {
         change_state(RobotState::AWAITING_CONNECTION, false);
         return;
     }
     
     process_logs();
-    
+    std::lock_guard<std::mutex> guard(connection_write_mutex);
     for(auto packet : write_queue) {
+        update_last_heartbeat_time();
         if(packet.packet.has_value()) {
             connection.write_n(reinterpret_cast<const char*>(packet.packet.value()), sizeof(HunchPacket));
             std::cout << "sending" << *packet.packet.value() << std::endl;
@@ -232,6 +255,11 @@ void sm_housekeep() {
 }
 
 void sm_handle_message(int depth) {
+    last_received_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    if((processing_packet.flags && ServerFlags::HEARTBEAT) == ServerFlags::HEARTBEAT) {
+        change_state(RobotState::READ_MESSAGES);
+        return;
+    }
     if((processing_packet.flags && ServerFlags::PANIC_RESET) == ServerFlags::PANIC_RESET) {
         change_state(RobotState::LOADING);
         return;
@@ -272,11 +300,33 @@ void tick_state_machine(int depth) {
         }
     }catch(std::exception& ex) {
         // some horrible exception just occurred. restart.
-        write_queue.push_back(SendableData(HunchPacket::ofMessage(std::string("Horrible crash just occurred, but not a segfault. ex: ") + ex.what())));
+        add_to_write_queue(SendableData(HunchPacket::ofMessage(std::string("Horrible crash just occurred, but not a segfault. ex: ") + ex.what())));
         state = RobotState::LOADING;
     }
 }
 
+void maintain_heartbeat() {
+    long time_since_last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() - last_received_heartbeat;
+
+    if(time_since_last_heartbeat > (heartbeat_timeout * 1000)) {
+        add_to_write_queue(SendableData(HunchPacket::ofMessage(std::string("Heartbeat missed! Sending!"))));
+    }
+
+    std::lock_guard<std::mutex> guard(connection_write_mutex);
+    HunchPacket* packet = new HunchPacket();
+    packet->flags = ClientFlags::HEARTBEAT;
+    connection.write_n(reinterpret_cast<const char*>(packet), sizeof(HunchPacket));
+}
+
+void keep_up_heartbeat() {
+    while(true) {
+        if(state == RobotState::AWAITING_CONNECTION) {
+            std::this_thread::sleep_for(5s);
+        }
+        maintain_heartbeat();
+        std::this_thread::sleep_for(1s);
+    }
+}
 
 int main() {
     while(true) {

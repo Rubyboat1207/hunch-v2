@@ -2,7 +2,6 @@
 #include<optional>
 #include<cstdint>
 
-
 #pragma pack(push, 1)
 struct HunchPacket {
     uint16_t version;
@@ -38,6 +37,8 @@ struct HunchPacket {
 struct ClientFlags {
     const static uint64_t SENDING_PICTURE = 1;
     const static uint64_t LOG = 4;
+    const static uint64_t HEARTBEAT = 16;
+    const static uint64_t DISABLE_HEARTBEAT = 32;
 };
 
 struct ServerFlags {
@@ -45,6 +46,8 @@ struct ServerFlags {
     const static uint64_t DONT_INTERPRET_MOTORS = 2;
     const static uint64_t LOG = 4;
     const static uint64_t PANIC_RESET = 8;
+    const static uint64_t HEARTBEAT = 16;
+    const static uint64_t DISABLE_HEARTBEAT = 32;
 };
 
 struct SendableData {
