@@ -31,12 +31,16 @@ static std::vector<std::string> log_queue = std::vector<std::string>();
 static HunchPacket processing_packet;
 static sockpp::tcp_connector connection;
 AdafruitMotorHAT hat;
+#ifdef HOST
+std::string host = HOST;
+#else
 std::string host = "10.9.11.26";
+#endif
 int port = 5000;
 int left_motor_port = 2;
 int right_motor_port = 1;
 float heartbeat_freq = 2;
-float heartbeat_timeout = 15;
+float heartbeat_timeout = 5;
 long last_sent_heartbeat = 0;
 long last_received_heartbeat = 0;
 
@@ -80,8 +84,7 @@ void change_state(RobotState new_state, bool should_log=true) {
 void sm_attempt_connection() {
     auto result = connection.connect(host, port, 10s);
 
-    if(result) {
-        connection.read_timeout(5s);
+    if(result || result.error().value() == 10035) {
         change_state(RobotState::ACQUIRED_CONNECTION);
     }
 }
@@ -220,7 +223,6 @@ void process_logs() {
                 }
             }
             if(!found) {
-                std::lock_guard<std::mutex> guard(write_queue_mutex);
                 add_to_write_queue(SendableData(HunchPacket::ofMessage(sub)));
             }
         }
@@ -228,6 +230,9 @@ void process_logs() {
 }
 
 void sm_housekeep() {
+    if(state == RobotState::LOADING || state == RobotState::AWAITING_CONNECTION) {
+        return;
+    }
     long time_since_last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() - last_sent_heartbeat;
     if(!connection.is_open() || time_since_last_heartbeat > (heartbeat_timeout * 1000)) {
         change_state(RobotState::AWAITING_CONNECTION, false);
@@ -256,20 +261,21 @@ void sm_housekeep() {
 
 void sm_handle_message(int depth) {
     last_received_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    if((processing_packet.flags && ServerFlags::HEARTBEAT) == ServerFlags::HEARTBEAT) {
+    if((processing_packet.flags & ServerFlags::HEARTBEAT) == ServerFlags::HEARTBEAT) {
         change_state(RobotState::READ_MESSAGES);
+        std::cout << "got heartbeat from server" << std::endl;
         return;
     }
-    if((processing_packet.flags && ServerFlags::PANIC_RESET) == ServerFlags::PANIC_RESET) {
+    if((processing_packet.flags & ServerFlags::PANIC_RESET) == ServerFlags::PANIC_RESET) {
         change_state(RobotState::LOADING);
         return;
     }
-    if((processing_packet.flags && ServerFlags::REQUEST_IMAGE) == ServerFlags::REQUEST_IMAGE) {
+    if((processing_packet.flags & ServerFlags::REQUEST_IMAGE) == ServerFlags::REQUEST_IMAGE) {
         change_state(RobotState::SENDING_IMAGE);
         tick_until(RobotState::HANDLE_MESSAGE, depth);
     }
 
-    if((processing_packet.flags && ServerFlags::DONT_INTERPRET_MOTORS) != ServerFlags::DONT_INTERPRET_MOTORS) {
+    if((processing_packet.flags & ServerFlags::DONT_INTERPRET_MOTORS) != ServerFlags::DONT_INTERPRET_MOTORS) {
         change_state(RobotState::UPDATING_MOTORS);
         tick_until(RobotState::HANDLE_MESSAGE, depth);
     }
@@ -289,6 +295,7 @@ void tick_until(RobotState target, int depth) {
 void tick_state_machine(int depth) {
     sm_housekeep();
     try {
+        std::cout << "tick" << std::endl;
         switch (state) {
             case(RobotState::LOADING): sm_load(); break;
             case(RobotState::AWAITING_CONNECTION): sm_attempt_connection(); break;
@@ -306,9 +313,17 @@ void tick_state_machine(int depth) {
 }
 
 void maintain_heartbeat() {
-    long time_since_last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() - last_received_heartbeat;
+    long time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    long last_sent_hb_time = time - last_sent_heartbeat;
+    long last_received_hb_time = time - last_received_heartbeat;
 
-    if(time_since_last_heartbeat > (heartbeat_freq * 1000)) {
+    if(last_received_hb_time > (heartbeat_timeout * 1000)) {
+        std::cout << "Heartbeat timeout!" << std::endl;
+        change_state(RobotState::AWAITING_CONNECTION, false);
+        return;
+    }
+
+    if(last_sent_hb_time > (heartbeat_freq * 1000)) {
         add_to_write_queue(SendableData(HunchPacket::ofMessage(std::string("Heartbeat missed! Sending!"))));
     }
 
@@ -320,15 +335,17 @@ void maintain_heartbeat() {
 
 void keep_up_heartbeat() {
     while(true) {
-        if(state == RobotState::AWAITING_CONNECTION) {
+        if(state == RobotState::AWAITING_CONNECTION || state == RobotState::LOADING) {
             std::this_thread::sleep_for(5s);
+            continue;
         }
         maintain_heartbeat();
-        std::this_thread::sleep_for(1s);
+        std::this_thread::sleep_for(5s);
     }
 }
 
 int main() {
+    std::cout << "Hello Hunch! Connecting to '" << host << "'" << std::endl;
     std::thread heartbeat_thread(keep_up_heartbeat);
     while(true) {
         tick_state_machine(0);

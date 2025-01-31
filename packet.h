@@ -1,6 +1,7 @@
 #include<iostream>
 #include<optional>
 #include<cstdint>
+#include<cstring>
 
 #pragma pack(push, 1)
 struct HunchPacket {
@@ -19,6 +20,7 @@ struct HunchPacket {
         this->u = 0;
         this->v = 0;
         this->flags = 0;
+        memset(this->message, 0, sizeof(this->message));
     }
 
     friend std::ostream& operator<<(std::ostream& os, const HunchPacket& packet) {

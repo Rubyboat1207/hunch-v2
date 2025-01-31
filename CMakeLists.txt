@@ -27,6 +27,7 @@ include_directories(${CMAKE_SOURCE_DIR})
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_definitions(-DDBG)  # Define WIN32 for your compiler
+    add_definitions(-DHOST=\"127.0.0.1\")
 endif()
 
 
