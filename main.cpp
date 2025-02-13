@@ -331,6 +331,7 @@ void maintain_heartbeat() {
     HunchPacket* packet = new HunchPacket();
     packet->flags = ClientFlags::HEARTBEAT;
     connection.write_n(reinterpret_cast<const char*>(packet), sizeof(HunchPacket));
+    delete packet;
 }
 
 void keep_up_heartbeat() {
