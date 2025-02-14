@@ -345,7 +345,27 @@ void keep_up_heartbeat() {
     }
 }
 
-int main() {
+void parse_arguments(int argc, char** argv) {
+    for(int i = 0; i < argc; i++) {
+        std::string arg = argv[i];
+        if(arg == "--host" && i + 1 < argc) {
+            host = argv[++i];
+        } else if(arg == "--port" && i + 1 < argc) {
+            port = std::stoi(argv[++i]);
+        } else if(arg == "--left_motor_port" && i + 1 < argc) {
+            left_motor_port = std::stoi(argv[++i]);
+        } else if(arg == "--right_motor_port" && i + 1 < argc) {
+            right_motor_port = std::stoi(argv[++i]);
+        } else if(arg == "--heartbeat_freq" && i + 1 < argc) {
+            heartbeat_freq = std::stof(argv[++i]);
+        } else if(arg == "--heartbeat_timeout" && i + 1 < argc) {
+            heartbeat_timeout = std::stof(argv[++i]);
+        }
+    }
+}
+
+int main(int arc, char** argv) {
+    parse_arguments(arc, argv);
     std::cout << "Hello Hunch! Connecting to '" << host << "'" << std::endl;
     std::thread heartbeat_thread(keep_up_heartbeat);
     while(true) {

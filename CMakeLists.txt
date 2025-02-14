@@ -30,5 +30,23 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_definitions(-DHOST=\"127.0.0.1\")
 endif()
 
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(CMAKE_C_COMPILER_LAUNCHER ccache)
+    set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
+    
+    if(NOT CMAKE_BUILD_TYPE)
+        set(CMAKE_BUILD_TYPE Debug)  # Default to Debug if not set
+    endif()
+
+    # Apply compilation flags based on build type
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        message(STATUS "Compiling in Debug mode (-Og)")
+        set(CMAKE_CXX_FLAGS_DEBUG "-Og -g")
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+        message(STATUS "Compiling in Release mode (-O2 -s)")
+        set(CMAKE_CXX_FLAGS_RELEASE "-O2 -s")
+    endif()
+endif()
+
 
 
