@@ -50,6 +50,7 @@ struct ServerFlags {
     const static uint64_t PANIC_RESET = 8;
     const static uint64_t HEARTBEAT = 16;
     const static uint64_t DISABLE_HEARTBEAT = 32;
+    const static uint64_t ADJUST_CONFIG = 64;
 };
 
 struct SendableData {

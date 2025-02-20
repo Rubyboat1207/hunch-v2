@@ -18,9 +18,9 @@
 using namespace std::chrono;
 
 enum class LogLevel {
-    INFO,
-    WARNING,
-    ERR
+    INFO=2,
+    WARNING=1,
+    ERR=0
 };
 
 const RobotState defaultState = RobotState::READ_MESSAGES;
@@ -43,9 +43,23 @@ float heartbeat_freq = 2;
 float heartbeat_timeout = 5;
 long last_sent_heartbeat = 0;
 long last_received_heartbeat = 0;
+long connected_time = 0;
+int loglevel = 0;
+int outputToConsole = 0;
 
 std::mutex write_queue_mutex;
 std::mutex connection_write_mutex;
+
+#define CONFIG_HOST 0
+#define CONFIG_PORT 1
+#define CONFIG_LEFT_MOTOR_PORT 2
+#define CONFIG_RIGHT_MOTOR_PORT 3
+#define CONFIG_HEARTBEAT_FREQ 4
+#define CONFIG_HEARTBEAT_TIMEOUT 5
+#define CONFIG_STDOUT 6
+#define CONFIG_LOG_LEVEL 7
+
+void set_config(int config, std::string value);
 
 void update_last_heartbeat_time() {
     last_sent_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -57,6 +71,9 @@ void add_to_write_queue(const SendableData& data) {
 }
 
 void log(LogLevel level, std::string message) {
+    if((int) level < loglevel) {
+        return;
+    }
     std::string prefix = "";
     switch (level) {
         case LogLevel::INFO: prefix = "[INFO] "; break;
@@ -73,11 +90,11 @@ float mapValue(float value, float inputMin, float inputMax, float outputMin, flo
     return outputMin + scaledValue * (outputMax - outputMin);
 }
 
-void change_state(RobotState new_state, bool should_log=true) {
+void change_state(RobotState new_state,  std::string reason, bool should_log=true) {
     state = new_state;
     // std::cout << "setting state to: " << state_to_string(state) << std::endl;
     if(should_log) {
-        log(LogLevel::INFO, "Setting state to: " + state_to_string(state));
+        log(LogLevel::INFO, "Setting state to: " + state_to_string(state) + " Reason: " + reason);
     }
 }
 
@@ -85,21 +102,22 @@ void sm_attempt_connection() {
     auto result = connection.connect(host, port, 10s);
 
     if(result || result.error().value() == 10035) {
-        change_state(RobotState::ACQUIRED_CONNECTION);
+        change_state(RobotState::ACQUIRED_CONNECTION, "Connected to server.");
+        connected_time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     }
 }
 
 void sm_load() {
     sockpp::initialize();
 
-    change_state(RobotState::AWAITING_CONNECTION, false);
+    change_state(RobotState::AWAITING_CONNECTION, "Loaded successfully.");
 }
 
 void sm_on_connected() {
     log(LogLevel::INFO, "Connected to server successfully!");
 
-    change_state(RobotState::READ_MESSAGES);
-
+    change_state(RobotState::READ_MESSAGES, "Initial connection successful.");
+    update_last_heartbeat_time();
 }
 
 void sm_read_messages() {
@@ -112,7 +130,7 @@ void sm_read_messages() {
 		return;
 	}
 
-   change_state(RobotState::HANDLE_MESSAGE);
+   change_state(RobotState::HANDLE_MESSAGE, "Read message from server.");
    processing_packet = HunchPacket::decode(buffer);
    std::cout << processing_packet << std::endl;
 }
@@ -166,7 +184,7 @@ void sm_send_image() {
     uint8_t* data = new uint8_t[jpg.size()];
     memcpy(data, reinterpret_cast<uint8_t*>(jpg.data()), jpg.size());
     add_to_write_queue(SendableData(packet, std::make_pair(data, jpg.size())));
-    change_state(RobotState::HANDLE_MESSAGE);
+    change_state(RobotState::HANDLE_MESSAGE, "Sent image to server.");
 }
 
 void updateMotor(int slot, int speed) {
@@ -190,7 +208,7 @@ void sm_update_motors() {
 	updateMotor(left_motor_port, left_speed);
 	updateMotor(right_motor_port, right_speed);
 
-    change_state(RobotState::HANDLE_MESSAGE);
+    change_state(RobotState::HANDLE_MESSAGE, "Updated motors.");
 }
 
 void process_logs() {
@@ -234,8 +252,9 @@ void sm_housekeep() {
         return;
     }
     long time_since_last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() - last_sent_heartbeat;
-    if(!connection.is_open() || time_since_last_heartbeat > (heartbeat_timeout * 1000)) {
-        change_state(RobotState::AWAITING_CONNECTION, false);
+    long time_since_connected = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() - connected_time;
+    if(!connection.is_open() || time_since_last_heartbeat > (heartbeat_timeout * 1000) && time_since_connected > 1000) {
+        change_state(RobotState::AWAITING_CONNECTION, "Connection lost.");
         return;
     }
     
@@ -262,25 +281,37 @@ void sm_housekeep() {
 void sm_handle_message(int depth) {
     last_received_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     if((processing_packet.flags & ServerFlags::HEARTBEAT) == ServerFlags::HEARTBEAT) {
-        change_state(RobotState::READ_MESSAGES);
+        change_state(RobotState::READ_MESSAGES, "Got heartbeat from server.");
         std::cout << "got heartbeat from server" << std::endl;
         return;
     }
     if((processing_packet.flags & ServerFlags::PANIC_RESET) == ServerFlags::PANIC_RESET) {
-        change_state(RobotState::LOADING);
+        change_state(RobotState::LOADING, "Server requested a panic reset.");
         return;
     }
     if((processing_packet.flags & ServerFlags::REQUEST_IMAGE) == ServerFlags::REQUEST_IMAGE) {
-        change_state(RobotState::SENDING_IMAGE);
+        change_state(RobotState::SENDING_IMAGE, "Server requested an image.");
         tick_until(RobotState::HANDLE_MESSAGE, depth);
     }
 
     if((processing_packet.flags & ServerFlags::DONT_INTERPRET_MOTORS) != ServerFlags::DONT_INTERPRET_MOTORS) {
-        change_state(RobotState::UPDATING_MOTORS);
+        change_state(RobotState::UPDATING_MOTORS, "Server requested motor updates.");
         tick_until(RobotState::HANDLE_MESSAGE, depth);
     }
 
-    change_state(RobotState::READ_MESSAGES);
+    if((processing_packet.flags & ServerFlags::ADJUST_CONFIG) == ServerFlags::ADJUST_CONFIG) {
+        std::string value = std::string(processing_packet.message);
+        
+        try {
+            set_config(processing_packet.u, value);
+
+        }catch(std::exception ex) {
+            log(LogLevel::ERR, "Failed to adjust config");
+        }
+        change_state(RobotState::HANDLE_MESSAGE, "Config adjusted. Returning to message handling.");
+    }
+
+    change_state(RobotState::READ_MESSAGES, "message handled.");
 }
 
 void tick_until(RobotState target, int depth) {
@@ -319,7 +350,7 @@ void maintain_heartbeat() {
 
     if(last_received_hb_time > (heartbeat_timeout * 1000)) {
         std::cout << "Heartbeat timeout!" << std::endl;
-        change_state(RobotState::AWAITING_CONNECTION, false);
+        change_state(RobotState::AWAITING_CONNECTION, "Heartbeat timeout.");
         return;
     }
 
@@ -349,18 +380,35 @@ void parse_arguments(int argc, char** argv) {
     for(int i = 0; i < argc; i++) {
         std::string arg = argv[i];
         if(arg == "--host" && i + 1 < argc) {
-            host = argv[++i];
+            set_config(CONFIG_HOST, argv[++i]);
         } else if(arg == "--port" && i + 1 < argc) {
-            port = std::stoi(argv[++i]);
+            set_config(CONFIG_PORT, argv[++i]);
         } else if(arg == "--left_motor_port" && i + 1 < argc) {
-            left_motor_port = std::stoi(argv[++i]);
+            set_config(CONFIG_LEFT_MOTOR_PORT, argv[++i]);
         } else if(arg == "--right_motor_port" && i + 1 < argc) {
-            right_motor_port = std::stoi(argv[++i]);
+            set_config(CONFIG_RIGHT_MOTOR_PORT, argv[++i]);
         } else if(arg == "--heartbeat_freq" && i + 1 < argc) {
-            heartbeat_freq = std::stof(argv[++i]);
+            set_config(CONFIG_HEARTBEAT_FREQ, argv[++i]);
         } else if(arg == "--heartbeat_timeout" && i + 1 < argc) {
-            heartbeat_timeout = std::stof(argv[++i]);
+            set_config(CONFIG_HEARTBEAT_TIMEOUT, argv[++i]);
+        } else if(arg == "--stdout" && i + 1 < argc) {
+            set_config(CONFIG_STDOUT, argv[++i]);
+        } else if(arg == "--log-level" && i + 1 < argc) {
+            set_config(CONFIG_LOG_LEVEL, argv[++i]);
         }
+    }
+}
+
+void set_config(int config, std::string value) {
+    switch(config) {
+        case 0: host = value; break;
+        case 1: port = std::stoi(value); break;
+        case 2: left_motor_port = std::stoi(value); break;
+        case 3: right_motor_port = std::stoi(value); break;
+        case 4: heartbeat_freq = std::stof(value); break;
+        case 5: heartbeat_timeout = std::stof(value); break;
+        case 6: outputToConsole = std::stoi(value); break;
+        case 7: loglevel = std::stoi(value); break;
     }
 }
 
@@ -368,6 +416,11 @@ int main(int arc, char** argv) {
     parse_arguments(arc, argv);
     std::cout << "Hello Hunch! Connecting to '" << host << "'" << std::endl;
     std::thread heartbeat_thread(keep_up_heartbeat);
+    cv::VideoCapture cap(0);
+    if(!cap.isOpened()) {
+        log(LogLevel::WARNING, "Couldn't find a camera. Continuing without.");
+    }
+    cap.release();
     while(true) {
         tick_state_machine(0);
     }
