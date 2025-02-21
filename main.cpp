@@ -44,8 +44,8 @@ float heartbeat_timeout = 5;
 long last_sent_heartbeat = 0;
 long last_received_heartbeat = 0;
 long connected_time = 0;
-int loglevel = 0;
-int outputToConsole = 0;
+int loglevel = 2;
+int outputToConsole = 1;
 
 std::mutex write_queue_mutex;
 std::mutex connection_write_mutex;
@@ -71,7 +71,7 @@ void add_to_write_queue(const SendableData& data) {
 }
 
 void log(LogLevel level, std::string message) {
-    if((int) level < loglevel) {
+    if(loglevel < (int) level) {
         return;
     }
     std::string prefix = "";
@@ -81,7 +81,9 @@ void log(LogLevel level, std::string message) {
         case LogLevel::ERR: prefix = "[ERROR] "; break;
     }
     log_queue.push_back(prefix + message);
-    std::cout << prefix << message << std::endl;
+    if(outputToConsole) {
+        std::cout << prefix << message << std::endl;
+    }
 }
 
 float mapValue(float value, float inputMin, float inputMax, float outputMin, float outputMax) {
@@ -132,7 +134,7 @@ void sm_read_messages() {
 
    change_state(RobotState::HANDLE_MESSAGE, "Read message from server.");
    processing_packet = HunchPacket::decode(buffer);
-   std::cout << processing_packet << std::endl;
+//    std::cout << processing_packet << std::endl;
 }
 
 std::optional<cv::Mat> take_image() {
@@ -264,11 +266,11 @@ void sm_housekeep() {
         update_last_heartbeat_time();
         if(packet.packet.has_value()) {
             connection.write_n(reinterpret_cast<const char*>(packet.packet.value()), sizeof(HunchPacket));
-            std::cout << "sending" << *packet.packet.value() << std::endl;
+            // std::cout << "sending" << *packet.packet.value() << std::endl;
         }
         if(packet.extra_data.has_value()) {
             auto v = packet.extra_data.value();
-            std::cout << "Sending " << v.second << " extra bytes of extra data." << std::endl;
+            // std::cout << "Sending " << v.second << " extra bytes of extra data." << std::endl;
             connection.write_n(reinterpret_cast<const char*>(v.first), v.second);
         }
 
@@ -282,7 +284,7 @@ void sm_handle_message(int depth) {
     last_received_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     if((processing_packet.flags & ServerFlags::HEARTBEAT) == ServerFlags::HEARTBEAT) {
         change_state(RobotState::READ_MESSAGES, "Got heartbeat from server.");
-        std::cout << "got heartbeat from server" << std::endl;
+        // std::cout << "got heartbeat from server" << std::endl;
         return;
     }
     if((processing_packet.flags & ServerFlags::PANIC_RESET) == ServerFlags::PANIC_RESET) {
@@ -326,7 +328,6 @@ void tick_until(RobotState target, int depth) {
 void tick_state_machine(int depth) {
     sm_housekeep();
     try {
-        std::cout << "tick" << std::endl;
         switch (state) {
             case(RobotState::LOADING): sm_load(); break;
             case(RobotState::AWAITING_CONNECTION): sm_attempt_connection(); break;
@@ -349,7 +350,7 @@ void maintain_heartbeat() {
     long last_received_hb_time = time - last_received_heartbeat;
 
     if(last_received_hb_time > (heartbeat_timeout * 1000)) {
-        std::cout << "Heartbeat timeout!" << std::endl;
+        // std::cout << "Heartbeat timeout!" << std::endl;
         change_state(RobotState::AWAITING_CONNECTION, "Heartbeat timeout.");
         return;
     }
