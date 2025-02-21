@@ -37,8 +37,10 @@ std::string host = HOST;
 std::string host = "10.9.11.26";
 #endif
 int port = 5000;
-int left_motor_port = 2;
-int right_motor_port = 1;
+int lf_port = 1;
+int lb_port = 3;
+int rf_port = 2;
+int rb_port = 4;
 float heartbeat_freq = 2;
 float heartbeat_timeout = 5;
 long last_sent_heartbeat = 0;
@@ -52,8 +54,10 @@ std::mutex connection_write_mutex;
 
 #define CONFIG_HOST 0
 #define CONFIG_PORT 1
-#define CONFIG_LEFT_MOTOR_PORT 2
-#define CONFIG_RIGHT_MOTOR_PORT 3
+#define CONFIG_LF_MOTOR_PORT 2
+#define CONFIG_LB_MOTOR_PORT 8
+#define CONFIG_RF_MOTOR_PORT 3
+#define CONFIG_RB_MOTOR_PORT 9
 #define CONFIG_HEARTBEAT_FREQ 4
 #define CONFIG_HEARTBEAT_TIMEOUT 5
 #define CONFIG_STDOUT 6
@@ -207,8 +211,10 @@ void sm_update_motors() {
 	float left_speed = mapValue(processing_packet.x, -1, 1, -255, 255);
 	float right_speed = mapValue(processing_packet.y, -1, 1, -255, 255);
 	
-	updateMotor(left_motor_port, left_speed);
-	updateMotor(right_motor_port, right_speed);
+	updateMotor(lb_port, left_speed);
+	updateMotor(lf_port, left_speed);
+	updateMotor(rb_port, right_speed);
+	updateMotor(rf_port, right_speed);
 
     change_state(RobotState::HANDLE_MESSAGE, "Updated motors.");
 }
@@ -384,10 +390,14 @@ void parse_arguments(int argc, char** argv) {
             set_config(CONFIG_HOST, argv[++i]);
         } else if(arg == "--port" && i + 1 < argc) {
             set_config(CONFIG_PORT, argv[++i]);
-        } else if(arg == "--left_motor_port" && i + 1 < argc) {
-            set_config(CONFIG_LEFT_MOTOR_PORT, argv[++i]);
-        } else if(arg == "--right_motor_port" && i + 1 < argc) {
-            set_config(CONFIG_RIGHT_MOTOR_PORT, argv[++i]);
+        } else if(arg == "--lf_motor_port" && i + 1 < argc) {
+            set_config(CONFIG_LF_MOTOR_PORT, argv[++i]);
+        } else if(arg == "--rf_motor_port" && i + 1 < argc) {
+            set_config(CONFIG_RF_MOTOR_PORT, argv[++i]);
+        } else if(arg == "--lb_motor_port" && i + 1 < argc) {
+            set_config(CONFIG_LF_MOTOR_PORT, argv[++i]);
+        } else if(arg == "--rb_motor_port" && i + 1 < argc) {
+            set_config(CONFIG_RF_MOTOR_PORT, argv[++i]);
         } else if(arg == "--heartbeat_freq" && i + 1 < argc) {
             set_config(CONFIG_HEARTBEAT_FREQ, argv[++i]);
         } else if(arg == "--heartbeat_timeout" && i + 1 < argc) {
@@ -404,12 +414,14 @@ void set_config(int config, std::string value) {
     switch(config) {
         case 0: host = value; break;
         case 1: port = std::stoi(value); break;
-        case 2: left_motor_port = std::stoi(value); break;
-        case 3: right_motor_port = std::stoi(value); break;
+        case 2: lf_port = std::stoi(value); break;
+        case 3: rf_port = std::stoi(value); break;
         case 4: heartbeat_freq = std::stof(value); break;
         case 5: heartbeat_timeout = std::stof(value); break;
         case 6: outputToConsole = std::stoi(value); break;
         case 7: loglevel = std::stoi(value); break;
+        case 8: lb_port = std::stoi(value); break;
+        case 9: rb_port = std::stoi(value); break;
     }
 }
 
