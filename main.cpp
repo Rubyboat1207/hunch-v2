@@ -212,9 +212,9 @@ void sm_update_motors() {
 	float right_speed = mapValue(processing_packet.y, -1, 1, -255, 255);
 	
 	updateMotor(lb_port, left_speed);
-	updateMotor(lf_port, left_speed);
+	updateMotor(lf_port, -left_speed);
 	updateMotor(rb_port, right_speed);
-	updateMotor(rf_port, right_speed);
+	updateMotor(rf_port, -right_speed);
 
     change_state(RobotState::HANDLE_MESSAGE, "Updated motors.");
 }
