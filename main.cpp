@@ -14,14 +14,10 @@
 #include "state_machine.h"
 #include <thread>
 #include <mutex>
+#include "utils.h"
+#include "lua_commands.hpp"
 
 using namespace std::chrono;
-
-enum class LogLevel {
-    INFO=2,
-    WARNING=1,
-    ERR=0
-};
 
 const RobotState defaultState = RobotState::READ_MESSAGES;
 
@@ -31,6 +27,7 @@ static std::vector<std::string> log_queue = std::vector<std::string>();
 static HunchPacket processing_packet;
 static sockpp::tcp_connector connection;
 AdafruitMotorHAT hat;
+static std::string lua;
 #ifdef HOST
 std::string host = HOST;
 #else
@@ -90,13 +87,7 @@ void log(LogLevel level, std::string message) {
     }
 }
 
-float mapValue(float value, float inputMin, float inputMax, float outputMin, float outputMax) {
-    // Scale the value from input range to output range
-    float scaledValue = (value - inputMin) / (inputMax - inputMin);
-    return outputMin + scaledValue * (outputMax - outputMin);
-}
-
-void change_state(RobotState new_state,  std::string reason, bool should_log=true) {
+void change_state(RobotState new_state, std::string reason, bool should_log) {
     state = new_state;
     // std::cout << "setting state to: " << state_to_string(state) << std::endl;
     if(should_log) {
@@ -318,6 +309,15 @@ void sm_handle_message(int depth) {
         }
         change_state(RobotState::HANDLE_MESSAGE, "Config adjusted. Returning to message handling.");
     }
+    // this needs to run before lua_done check. If re-ordering, make sure they stay in this order.
+    if((processing_packet.flags & ServerFlags::CONTAINS_LUA) == ServerFlags::CONTAINS_LUA) {
+        lua += std::string(processing_packet.message);
+    }
+    if((processing_packet.flags & ServerFlags::LUA_DONE) == ServerFlags::LUA_DONE) {
+        log(LogLevel::INFO, "Running Lua code.");
+        run_lua_string(lua);
+        lua = "";
+    }
 
     change_state(RobotState::READ_MESSAGES, "message handled.");
 }
@@ -427,6 +427,7 @@ void set_config(int config, std::string value) {
 
 int main(int arc, char** argv) {
     parse_arguments(arc, argv);
+    init_lua();
     std::cout << "Hello Hunch! Connecting to '" << host << "'" << std::endl;
     std::thread heartbeat_thread(keep_up_heartbeat);
     cv::VideoCapture cap(0);

@@ -51,6 +51,8 @@ struct ServerFlags {
     const static uint64_t HEARTBEAT = 16;
     const static uint64_t DISABLE_HEARTBEAT = 32;
     const static uint64_t ADJUST_CONFIG = 64;
+    const static uint64_t CONTAINS_LUA = 128;
+    const static uint64_t LUA_DONE = 256;
 };
 
 struct SendableData {

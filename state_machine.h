@@ -1,3 +1,5 @@
+#ifndef STATE_MACHINE
+#define STATE_MACHINE
 #include <string>
 
 enum class RobotState {
@@ -14,3 +16,6 @@ std::string state_to_string(RobotState state);
 
 void tick_state_machine(int depth=0);
 void tick_until(RobotState target, int depth);
+void change_state(RobotState new_state,  std::string reason, bool should_log=true);
+
+#endif

@@ -3,7 +3,7 @@ project(hunch VERSION 1.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_executable(hunch main.cpp packet.cpp state_machine.cpp)
+add_executable(hunch main.cpp packet.cpp state_machine.cpp utils.cpp lua_commands.cpp)
 
 set(MOTORHAT_DIR ${CMAKE_SOURCE_DIR}/adafruit-motor-hat-cpp-library)
 set(OPENCV_INCLUDE_DIR /usr/local/include/opencv4)
@@ -20,10 +20,17 @@ target_include_directories(hunch PRIVATE ${MOTORHAT_DIR}/source)
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
+# Lua
+find_package(Lua REQUIRED)
+target_include_directories(hunch PRIVATE ${LUA_INCLUDE_DIR})
+
 target_link_libraries(hunch PUBLIC Sockpp::sockpp)
 target_link_libraries(hunch PRIVATE motorhat)
 target_link_libraries(hunch PUBLIC ${OpenCV_LIBS})
 include_directories(${CMAKE_SOURCE_DIR})
+include_directories(${LUA_INCLUDE_DIR})
+target_link_libraries(hunch PUBLIC ${LUA_LIBRARIES})
+
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_definitions(-DDBG)  # Define WIN32 for your compiler
