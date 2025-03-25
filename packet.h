@@ -1,3 +1,5 @@
+#ifndef PACKET
+#define PACKET
 #include<iostream>
 #include<optional>
 #include<cstdint>
@@ -64,3 +66,7 @@ struct SendableData {
     SendableData(HunchPacket* hp, std::pair<uint8_t*, int> data);
     void clean();
 };
+
+void add_to_write_queue(const SendableData& data);
+
+#endif

@@ -39,11 +39,14 @@ int lb_port = 3;
 int rf_port = 2;
 int rb_port = 4;
 float heartbeat_freq = 2;
+float get_heartbeat_freq() {
+    return heartbeat_freq;
+}
 float heartbeat_timeout = 5;
 long last_sent_heartbeat = 0;
 long last_received_heartbeat = 0;
 long connected_time = 0;
-int loglevel = 2;
+int loglevel = 3;
 int outputToConsole = 1;
 
 std::mutex write_queue_mutex;
@@ -80,6 +83,7 @@ void log(LogLevel level, std::string message) {
         case LogLevel::INFO: prefix = "[INFO] "; break;
         case LogLevel::WARNING: prefix = "[WARNING] "; break;
         case LogLevel::ERR: prefix = "[ERROR] "; break;
+        case LogLevel::VERBOSE: prefix = "[VERBOSE] "; break;
     }
     log_queue.push_back(prefix + message);
     if(outputToConsole) {
@@ -91,7 +95,7 @@ void change_state(RobotState new_state, std::string reason, bool should_log) {
     state = new_state;
     // std::cout << "setting state to: " << state_to_string(state) << std::endl;
     if(should_log) {
-        log(LogLevel::INFO, "Setting state to: " + state_to_string(state) + " Reason: " + reason);
+        log(LogLevel::VERBOSE, "Setting state to: " + state_to_string(state) + " Reason: " + reason);
     }
 }
 
@@ -184,7 +188,7 @@ void sm_send_image() {
     change_state(RobotState::HANDLE_MESSAGE, "Sent image to server.");
 }
 
-void updateMotor(int slot, int speed) {
+void update_motor(int slot, int speed) {
     auto motor = hat.getMotor(slot);
 
     if(speed != 0) {
@@ -199,13 +203,13 @@ void updateMotor(int slot, int speed) {
 }
 
 void sm_update_motors() {
-	float left_speed = mapValue(processing_packet.x, -1, 1, -255, 255);
-	float right_speed = mapValue(processing_packet.y, -1, 1, -255, 255);
+	float left_speed = map_value(processing_packet.x, -1, 1, -255, 255);
+	float right_speed = map_value(processing_packet.y, -1, 1, -255, 255);
 	
-	updateMotor(lb_port, left_speed);
-	updateMotor(lf_port, -left_speed);
-	updateMotor(rb_port, right_speed);
-	updateMotor(rf_port, -right_speed);
+	update_motor(lb_port, left_speed);
+	update_motor(lf_port, -left_speed);
+	update_motor(rb_port, right_speed);
+	update_motor(rf_port, -right_speed);
 
     change_state(RobotState::HANDLE_MESSAGE, "Updated motors.");
 }
@@ -246,24 +250,22 @@ void process_logs() {
     }
 }
 
-void sm_housekeep() {
-    if(state == RobotState::LOADING || state == RobotState::AWAITING_CONNECTION) {
-        return;
-    }
+void check_heartbeat() {
     long time_since_last_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() - last_sent_heartbeat;
     long time_since_connected = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count() - connected_time;
     if(!connection.is_open() || time_since_last_heartbeat > (heartbeat_timeout * 1000) && time_since_connected > 1000) {
         change_state(RobotState::AWAITING_CONNECTION, "Connection lost.");
         return;
     }
-    
-    process_logs();
+}
+
+void send_enqueued_messages() {
     std::lock_guard<std::mutex> guard(connection_write_mutex);
     for(auto packet : write_queue) {
         update_last_heartbeat_time();
         if(packet.packet.has_value()) {
             connection.write_n(reinterpret_cast<const char*>(packet.packet.value()), sizeof(HunchPacket));
-            // std::cout << "sending" << *packet.packet.value() << std::endl;
+            // std::cout << "sending" << std::endl;
         }
         if(packet.extra_data.has_value()) {
             auto v = packet.extra_data.value();
@@ -275,6 +277,16 @@ void sm_housekeep() {
     }
 
     write_queue.clear();
+}
+
+void sm_housekeep() {
+    if(state == RobotState::LOADING || state == RobotState::AWAITING_CONNECTION) {
+        return;
+    }
+    check_heartbeat();
+    
+    process_logs();
+    send_enqueued_messages();
 }
 
 void sm_handle_message(int depth) {
@@ -316,10 +328,44 @@ void sm_handle_message(int depth) {
     if((processing_packet.flags & ServerFlags::LUA_DONE) == ServerFlags::LUA_DONE) {
         log(LogLevel::INFO, "Running Lua code.");
         run_lua_string(lua);
+        // lua can take a while to run, so it means we wont actually process a heartbeat for a while.
+        // this would mean that we instantly disconnect if lua takes longer than the timeout.
+        // just assume we havent disconnected if we're running lua.
+        last_received_heartbeat = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
         lua = "";
     }
 
     change_state(RobotState::READ_MESSAGES, "message handled.");
+}
+
+int get_motor_port(bool isLeft, bool isBack) {
+    if(isLeft) {
+        if(isBack) {
+            return lb_port;
+        }else {
+            return lf_port;
+        }
+    }else {
+        if(isBack) {
+            return rb_port;
+        }else {
+            return rf_port;
+        }
+    }
+}
+
+void run_side(bool isLeft, int speed) {
+    int port = get_motor_port(isLeft, false);
+    int back_port = get_motor_port(isLeft, true);
+    update_motor(port, speed);
+    update_motor(back_port, -speed);
+}
+
+void run_motors(int leftSpeed, int rightSpeed) {
+    update_motor(lb_port, leftSpeed);
+    update_motor(lf_port, -leftSpeed);
+    update_motor(rb_port, rightSpeed);
+    update_motor(rf_port, -rightSpeed);
 }
 
 void tick_until(RobotState target, int depth) {
@@ -352,7 +398,7 @@ void tick_state_machine(int depth) {
 
 void maintain_heartbeat() {
     long time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    long last_sent_hb_time = time - last_sent_heartbeat;
+    long time_since_last_sent_hb = time - last_sent_heartbeat;
     long last_received_hb_time = time - last_received_heartbeat;
 
     if(last_received_hb_time > (heartbeat_timeout * 1000)) {
@@ -361,15 +407,13 @@ void maintain_heartbeat() {
         return;
     }
 
-    if(last_sent_hb_time > (heartbeat_freq * 1000)) {
-        add_to_write_queue(SendableData(HunchPacket::ofMessage(std::string("Heartbeat missed! Sending!"))));
+    if(time_since_last_sent_hb > (heartbeat_freq * 1000)) {
+        HunchPacket* packet = new HunchPacket();
+        packet->flags = ClientFlags::HEARTBEAT;
+        std::cout << "Sending heartbeat" << std::endl;
+        add_to_write_queue(SendableData(packet));
     }
 
-    std::lock_guard<std::mutex> guard(connection_write_mutex);
-    HunchPacket* packet = new HunchPacket();
-    packet->flags = ClientFlags::HEARTBEAT;
-    connection.write_n(reinterpret_cast<const char*>(packet), sizeof(HunchPacket));
-    delete packet;
 }
 
 void keep_up_heartbeat() {
@@ -379,7 +423,7 @@ void keep_up_heartbeat() {
             continue;
         }
         maintain_heartbeat();
-        std::this_thread::sleep_for(5s);
+        std::this_thread::sleep_for(1s);
     }
 }
 

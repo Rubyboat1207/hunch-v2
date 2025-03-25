@@ -21,7 +21,7 @@ using namespace std::chrono;
 #define S_DONT_INTERPRET_MOTORS 2
 #define F_LOG 4
 
-float mapValue(float value, float inputMin, float inputMax, float outputMin, float outputMax) {
+float map_value(float value, float inputMin, float inputMax, float outputMin, float outputMax) {
     // Scale the value from input range to output range
     float scaledValue = (value - inputMin) / (inputMax - inputMin);
     return outputMin + scaledValue * (outputMax - outputMin);
@@ -144,8 +144,8 @@ void on_take_picture(sockpp::tcp_connector* conn)
 void run_motors(HunchPacket* packet) {
 	AdafruitMotorHAT hat;
 
-	float left_motor = mapValue(packet->x, -1, 1, -255, 255);
-	float right_motor = mapValue(packet->y, -1, 1, -255, 255);
+	float left_motor = map_value(packet->x, -1, 1, -255, 255);
+	float right_motor = map_value(packet->y, -1, 1, -255, 255);
 	
 	auto left = hat.getMotor(1);
 	auto right = hat.getMotor(2);

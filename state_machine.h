@@ -17,5 +17,5 @@ std::string state_to_string(RobotState state);
 void tick_state_machine(int depth=0);
 void tick_until(RobotState target, int depth);
 void change_state(RobotState new_state,  std::string reason, bool should_log=true);
-
+void send_enqueued_messages();
 #endif
